@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+font-end/bomberos/node_modules/
+
+# Build outputs
+dist/
+build/
+*.log
+
+# Environment variables
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+.cache/
