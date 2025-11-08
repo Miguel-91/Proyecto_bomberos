@@ -85,7 +85,7 @@ const LoginForm = () => {
         }));
 
         // Navigate to dashboard
-        navigate('/emergency-dashboard');
+        navigate('/emergency-call-intake');
       } else {
         setLoginAttempts(prev => prev + 1);
         setErrors({

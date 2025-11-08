@@ -13,7 +13,8 @@ const Login = () => {
     // Check if user is already logged in
     const user = localStorage.getItem('emergencyUser');
     if (user) {
-      navigate('/emergency-dashboard');
+      // Redirigir a la página de llamadas de emergencia
+      navigate('/emergency-call-intake');
     }
   }, [navigate]);
 
