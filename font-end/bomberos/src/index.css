@@ -1,9 +1,85 @@
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background-color: #f9f9f9;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Primary Colors */
+  --color-primary: #3b82f6;
+  --color-primary-foreground: #ffffff;
+
+  /* Accent Colors */
+  --color-accent: #6366f1;
+  --color-accent-foreground: #ffffff;
+
+  /* Background Colors */
+  --color-background: #ffffff;
+  --color-foreground: #0f172a;
+
+  /* Muted Colors */
+  --color-muted: #f1f5f9;
+  --color-muted-foreground: #64748b;
+
+  /* Card Colors */
+  --color-card: #ffffff;
+  --color-card-foreground: #0f172a;
+
+  /* Border Colors */
+  --color-border: #e2e8f0;
+  --color-input: #e2e8f0;
+
+  /* Destructive Colors */
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+
+  /* Success Colors */
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+
+  /* Radius */
+  --radius: 0.5rem;
 }
 
-h1 {
-  color: red;
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-color: var(--color-background);
+  color: var(--color-foreground);
+}
+
+code {
+  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
+    monospace;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--color-muted);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-muted-foreground);
+  border-radius: var(--radius);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-primary);
 }
