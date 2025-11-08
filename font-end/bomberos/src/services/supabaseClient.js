@@ -9,41 +9,75 @@ if (!supabaseUrl || !supabaseAnonKey) {
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Servicio de Llamadas de Emergencia
-export const llamadasEmergenciaService = {
-  // Crear una nueva llamada de emergencia
-  async crearLlamada(datosLlamada) {
+// Helper para convertir prioridad de texto a número
+const convertirPrioridadANumero = (prioridad) => {
+  const mapeo = {
+    'critical': 1,
+    'high': 2,
+    'medium': 3,
+    'low': 4,
+    'critica': 1,
+    'alta': 2,
+    'media': 3,
+    'baja': 4
+  };
+  return mapeo[prioridad?.toLowerCase()] || 3;
+};
+
+// Helper para convertir prioridad de número a texto
+const convertirPrioridadATexto = (prioridad) => {
+  const mapeo = {
+    1: 'critical',
+    2: 'high',
+    3: 'medium',
+    4: 'low'
+  };
+  return mapeo[prioridad] || 'medium';
+};
+
+// Servicio de Tickets de Emergencia
+export const ticketsEmergenciaService = {
+  // Crear un nuevo ticket de emergencia
+  async crearTicket(datosTicket) {
     const { data, error } = await supabase
-      .from('llamadas_emergencia')
+      .from('ticket_emergencia')
       .insert([{
-        nombre_llamante: datosLlamada.nombreLlamante,
-        telefono_llamante: datosLlamada.telefonoLlamante,
-        direccion_llamante: datosLlamada.direccionLlamante,
-        tipo_emergencia: datosLlamada.tipoEmergencia,
-        prioridad: datosLlamada.prioridad,
-        descripcion: datosLlamada.descripcion,
-        transcripcion: datosLlamada.transcripcion,
-        ubicacion_latitud: datosLlamada.ubicacionLatitud,
-        ubicacion_longitud: datosLlamada.ubicacionLongitud,
-        estado: datosLlamada.estado || 'activa',
-        nivel_riesgo: datosLlamada.nivelRiesgo,
-        recursos_necesarios: datosLlamada.recursosNecesarios,
-        unidades_estimadas: datosLlamada.unidadesEstimadas,
-        tiempo_estimado: datosLlamada.tiempoEstimado
+        solicitante: datosTicket.nombreLlamante,
+        telefono_solicitante: datosTicket.telefonoLlamante,
+        ubicacion: datosTicket.direccionLlamante,
+        tipo_emergencia: datosTicket.tipoEmergencia,
+        prioridad: convertirPrioridadANumero(datosTicket.prioridad),
+        descripcion: datosTicket.descripcion,
+        transcripcion: datosTicket.transcripcion,
+        ubicacion_latitud: datosTicket.ubicacionLatitud,
+        ubicacion_longitud: datosTicket.ubicacionLongitud,
+        estado: datosTicket.estado || 'PENDIENTE',
+        nivel_riesgo: datosTicket.nivelRiesgo,
+        recursos_necesarios: datosTicket.recursosNecesarios,
+        unidades_estimadas: datosTicket.unidadesEstimadas,
+        tiempo_estimado: datosTicket.tiempoEstimado,
+        fecha_creacion: new Date().toISOString()
       }])
       .select();
 
     if (error) {
-      console.error('Error al crear llamada:', error);
+      console.error('Error al crear ticket:', error);
       throw error;
     }
-    return data[0];
+
+    // Convertir el resultado a formato esperado
+    const ticket = data[0];
+    return {
+      id: ticket.id_ticket,
+      ...ticket,
+      prioridad: convertirPrioridadATexto(ticket.prioridad)
+    };
   },
 
-  // Obtener todas las llamadas con filtros opcionales
-  async obtenerTodasLasLlamadas(filtros = {}) {
+  // Obtener todos los tickets con filtros opcionales
+  async obtenerTodosLosTickets(filtros = {}) {
     let query = supabase
-      .from('llamadas_emergencia')
+      .from('ticket_emergencia')
       .select('*')
       .order('fecha_creacion', { ascending: false });
 
@@ -52,7 +86,8 @@ export const llamadasEmergenciaService = {
     }
 
     if (filtros.prioridad) {
-      query = query.eq('prioridad', filtros.prioridad);
+      const prioridadNum = convertirPrioridadANumero(filtros.prioridad);
+      query = query.eq('prioridad', prioridadNum);
     }
 
     if (filtros.tipoEmergencia) {
@@ -70,63 +105,88 @@ export const llamadasEmergenciaService = {
     const { data, error } = await query;
 
     if (error) {
-      console.error('Error al obtener llamadas:', error);
+      console.error('Error al obtener tickets:', error);
       throw error;
     }
-    return data;
+
+    // Convertir prioridades numéricas a texto
+    return data.map(ticket => ({
+      ...ticket,
+      id: ticket.id_ticket,
+      prioridad: convertirPrioridadATexto(ticket.prioridad)
+    }));
   },
 
-  // Obtener una llamada específica por ID
-  async obtenerLlamadaPorId(id) {
+  // Obtener un ticket específico por ID
+  async obtenerTicketPorId(id) {
     const { data, error } = await supabase
-      .from('llamadas_emergencia')
+      .from('ticket_emergencia')
       .select('*')
-      .eq('id', id)
+      .eq('id_ticket', id)
       .single();
 
     if (error) {
-      console.error('Error al obtener llamada:', error);
+      console.error('Error al obtener ticket:', error);
       throw error;
     }
-    return data;
+
+    return {
+      ...data,
+      id: data.id_ticket,
+      prioridad: convertirPrioridadATexto(data.prioridad)
+    };
   },
 
-  // Actualizar una llamada existente
-  async actualizarLlamada(id, actualizaciones) {
+  // Actualizar un ticket existente
+  async actualizarTicket(id, actualizaciones) {
+    // Si hay prioridad en las actualizaciones, convertirla
+    if (actualizaciones.prioridad) {
+      actualizaciones.prioridad = convertirPrioridadANumero(actualizaciones.prioridad);
+    }
+
     const { data, error } = await supabase
-      .from('llamadas_emergencia')
-      .update(actualizaciones)
-      .eq('id', id)
+      .from('ticket_emergencia')
+      .update({
+        ...actualizaciones,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id_ticket', id)
       .select();
 
     if (error) {
-      console.error('Error al actualizar llamada:', error);
+      console.error('Error al actualizar ticket:', error);
       throw error;
     }
-    return data[0];
+
+    const ticket = data[0];
+    return {
+      ...ticket,
+      id: ticket.id_ticket,
+      prioridad: convertirPrioridadATexto(ticket.prioridad)
+    };
   },
 
-  // Eliminar una llamada
-  async eliminarLlamada(id) {
+  // Eliminar un ticket
+  async eliminarTicket(id) {
     const { error } = await supabase
-      .from('llamadas_emergencia')
+      .from('ticket_emergencia')
       .delete()
-      .eq('id', id);
+      .eq('id_ticket', id);
 
     if (error) {
-      console.error('Error al eliminar llamada:', error);
+      console.error('Error al eliminar ticket:', error);
       throw error;
     }
     return true;
   },
 
   // Agregar entrada a la transcripción
-  async agregarEntradaTranscripcion(idLlamada, entrada) {
-    const llamada = await this.obtenerLlamadaPorId(idLlamada);
-    const transcripcion = llamada.transcripcion || [];
+  async agregarEntradaTranscripcion(idTicket, entrada) {
+    const ticket = await this.obtenerTicketPorId(idTicket);
+    const transcripcion = ticket.transcripcion || [];
     transcripcion.push(entrada);
 
-    return this.actualizarLlamada(idLlamada, { transcripcion });
+    return this.actualizarTicket(idTicket, { transcripcion });
   },
 
   // Obtener estadísticas del día
@@ -135,8 +195,8 @@ export const llamadasEmergenciaService = {
     hoy.setHours(0, 0, 0, 0);
 
     const { data, error } = await supabase
-      .from('llamadas_emergencia')
-      .select('id, estado, prioridad, tipo_emergencia')
+      .from('ticket_emergencia')
+      .select('id_ticket, estado, prioridad, tipo_emergencia')
       .gte('fecha_creacion', hoy.toISOString());
 
     if (error) {
@@ -146,19 +206,40 @@ export const llamadasEmergenciaService = {
 
     return {
       total: data.length,
-      activas: data.filter(l => l.estado === 'activa').length,
-      completadas: data.filter(l => l.estado === 'completada').length,
-      porTipo: data.reduce((acc, l) => {
-        acc[l.tipo_emergencia] = (acc[l.tipo_emergencia] || 0) + 1;
+      pendientes: data.filter(t => t.estado === 'PENDIENTE').length,
+      enProceso: data.filter(t => t.estado === 'EN_PROCESO').length,
+      completados: data.filter(t => t.estado === 'COMPLETADO').length,
+      porTipo: data.reduce((acc, t) => {
+        acc[t.tipo_emergencia] = (acc[t.tipo_emergencia] || 0) + 1;
         return acc;
       }, {}),
-      porPrioridad: data.reduce((acc, l) => {
-        acc[l.prioridad] = (acc[l.prioridad] || 0) + 1;
+      porPrioridad: data.reduce((acc, t) => {
+        const prioridadTexto = convertirPrioridadATexto(t.prioridad);
+        acc[prioridadTexto] = (acc[prioridadTexto] || 0) + 1;
         return acc;
       }, {})
     };
+  },
+
+  // Asignar jefe a un ticket
+  async asignarJefe(idTicket, idJefe) {
+    return this.actualizarTicket(idTicket, {
+      id_jefe_asignado: idJefe,
+      estado: 'ASIGNADO'
+    });
+  },
+
+  // Marcar ticket como atendido
+  async marcarComoAtendido(idTicket) {
+    return this.actualizarTicket(idTicket, {
+      fecha_atencion: new Date().toISOString(),
+      estado: 'ATENDIDO'
+    });
   }
 };
+
+// Mantener alias para compatibilidad con código existente
+export const llamadasEmergenciaService = ticketsEmergenciaService;
 
 // Servicio de Reportes
 export const reportesService = {
@@ -175,11 +256,11 @@ export const reportesService = {
     return data[0];
   },
 
-  async obtenerReportesPorLlamada(idLlamada) {
+  async obtenerReportesPorTicket(idTicket) {
     const { data, error } = await supabase
       .from('reportes_emergencia')
       .select('*')
-      .eq('llamada_id', idLlamada);
+      .eq('ticket_id', idTicket);
 
     if (error) {
       console.error('Error al obtener reportes:', error);

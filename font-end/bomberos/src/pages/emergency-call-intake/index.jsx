@@ -202,7 +202,7 @@ const EmergencyCallIntake = () => {
       alert('✅ Llamada guardada exitosamente en la base de datos');
     } catch (error) {
       console.error('Error al guardar llamada:', error);
-      alert('⚠️ Error al guardar la llamada. Verifica que la tabla "llamadas_emergencia" exista en Supabase.');
+      alert('⚠️ Error al guardar el ticket. Verifica que la tabla "ticket_emergencia" tenga los campos necesarios. Ejecuta el script migrar_ticket_emergencia.sql si falta algún campo.');
     }
   };
 
