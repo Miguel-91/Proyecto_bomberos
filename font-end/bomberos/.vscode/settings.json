@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.php": "php",
+        "plyconfig.json": "jsonc"
+    }
+}
