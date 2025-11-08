@@ -19,22 +19,34 @@ const Logo360 = () => {
             transform: isHovered ? 'rotateY(360deg)' : 'rotateY(0deg)',
           }}
         >
-          {/* Front Side - Logo */}
+          {/* Front Side - Logo Image */}
           <div
-            className="absolute inset-0 flex items-center justify-center rounded-full bg-gradient-to-br from-red-600 via-red-700 to-red-900 shadow-2xl"
+            className="absolute inset-0 flex items-center justify-center rounded-full bg-gradient-to-br from-red-600 via-red-700 to-red-900 shadow-2xl overflow-hidden"
             style={{
               backfaceVisibility: 'hidden',
               transform: 'translateZ(0px)',
             }}
           >
-            {/* Escudo de Bomberos Voluntarios */}
-            <div className="relative w-full h-full flex items-center justify-center">
-              {/* Cruz de Malta (Símbolo de Bomberos) */}
+            {/* Logo de Bomberos Voluntarios */}
+            <div className="relative w-full h-full flex items-center justify-center p-4">
+              <img
+                src="/images/logo-bomberos.png"
+                alt="Bomberos Voluntarios de Guatemala"
+                className="w-full h-full object-contain drop-shadow-2xl"
+                onError={(e) => {
+                  // Si la imagen no existe, mostrar el logo SVG de respaldo
+                  e.target.style.display = 'none';
+                  e.target.nextElementSibling.style.display = 'block';
+                }}
+              />
+
+              {/* Logo SVG de respaldo (si no encuentra la imagen) */}
               <svg
                 width="120"
                 height="120"
                 viewBox="0 0 120 120"
                 className="drop-shadow-lg"
+                style={{ display: 'none' }}
               >
                 {/* Cruz de Malta */}
                 <g transform="translate(60,60)">
@@ -85,7 +97,7 @@ const Logo360 = () => {
               </svg>
 
               {/* Efecto de brillo */}
-              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-white/20 to-transparent"></div>
+              <div className="absolute inset-0 rounded-full bg-gradient-to-br from-white/20 to-transparent pointer-events-none"></div>
             </div>
           </div>
 

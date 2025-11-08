@@ -45,9 +45,33 @@ const Login = () => {
           <div className="relative z-10 flex flex-col justify-between w-full">
             {/* Header */}
             <div>
+              {/* Imagen Institucional de Bomberos (OPCIONAL) */}
+              <div className="mb-6 rounded-2xl overflow-hidden shadow-2xl bg-white/10 backdrop-blur-sm">
+                <img
+                  src="/images/bomberos-banner.jpg"
+                  alt="Bomberos Voluntarios de Guatemala"
+                  className="w-full h-48 object-cover"
+                  onError={(e) => {
+                    // Si la imagen no existe, ocultar el contenedor
+                    e.target.parentElement.style.display = 'none';
+                  }}
+                />
+              </div>
+
               <div className="flex items-center space-x-4 mb-8">
-                <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm">
-                  <Icon name="Flame" size={36} color="gold" />
+                <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center backdrop-blur-sm overflow-hidden">
+                  {/* Logo pequeño en el header */}
+                  <img
+                    src="/images/logo-bomberos.png"
+                    alt="Logo BVG"
+                    className="w-12 h-12 object-contain"
+                    onError={(e) => {
+                      // Si no hay imagen, mostrar el icono de llama
+                      e.target.style.display = 'none';
+                      e.target.nextElementSibling.style.display = 'block';
+                    }}
+                  />
+                  <Icon name="Flame" size={36} color="gold" style={{ display: 'none' }} />
                 </div>
                 <div>
                   <h1 className="text-4xl font-bold tracking-tight">Bomberos Voluntarios</h1>
