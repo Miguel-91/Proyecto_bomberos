@@ -4,140 +4,185 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  console.warn('Supabase credentials not found in environment variables');
+  console.warn('Credenciales de Supabase no encontradas en las variables de entorno');
 }
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// Emergency Calls Service
-export const emergencyCallsService = {
-  // Create a new emergency call
-  async createCall(callData) {
+// Servicio de Llamadas de Emergencia
+export const llamadasEmergenciaService = {
+  // Crear una nueva llamada de emergencia
+  async crearLlamada(datosLlamada) {
     const { data, error } = await supabase
-      .from('emergency_calls')
+      .from('llamadas_emergencia')
       .insert([{
-        caller_name: callData.callerName,
-        caller_phone: callData.callerPhone,
-        caller_address: callData.callerAddress,
-        emergency_type: callData.emergencyType,
-        priority: callData.priority,
-        description: callData.description,
-        transcript: callData.transcript,
-        location_lat: callData.locationLat,
-        location_lng: callData.locationLng,
-        status: callData.status || 'active',
-        created_at: new Date().toISOString()
+        nombre_llamante: datosLlamada.nombreLlamante,
+        telefono_llamante: datosLlamada.telefonoLlamante,
+        direccion_llamante: datosLlamada.direccionLlamante,
+        tipo_emergencia: datosLlamada.tipoEmergencia,
+        prioridad: datosLlamada.prioridad,
+        descripcion: datosLlamada.descripcion,
+        transcripcion: datosLlamada.transcripcion,
+        ubicacion_latitud: datosLlamada.ubicacionLatitud,
+        ubicacion_longitud: datosLlamada.ubicacionLongitud,
+        estado: datosLlamada.estado || 'activa',
+        nivel_riesgo: datosLlamada.nivelRiesgo,
+        recursos_necesarios: datosLlamada.recursosNecesarios,
+        unidades_estimadas: datosLlamada.unidadesEstimadas,
+        tiempo_estimado: datosLlamada.tiempoEstimado
       }])
       .select();
 
     if (error) {
-      console.error('Error creating call:', error);
+      console.error('Error al crear llamada:', error);
       throw error;
     }
     return data[0];
   },
 
-  // Get all calls
-  async getAllCalls(filters = {}) {
+  // Obtener todas las llamadas con filtros opcionales
+  async obtenerTodasLasLlamadas(filtros = {}) {
     let query = supabase
-      .from('emergency_calls')
+      .from('llamadas_emergencia')
       .select('*')
-      .order('created_at', { ascending: false });
+      .order('fecha_creacion', { ascending: false });
 
-    if (filters.status) {
-      query = query.eq('status', filters.status);
+    if (filtros.estado) {
+      query = query.eq('estado', filtros.estado);
     }
 
-    if (filters.priority) {
-      query = query.eq('priority', filters.priority);
+    if (filtros.prioridad) {
+      query = query.eq('prioridad', filtros.prioridad);
+    }
+
+    if (filtros.tipoEmergencia) {
+      query = query.eq('tipo_emergencia', filtros.tipoEmergencia);
+    }
+
+    if (filtros.fechaDesde) {
+      query = query.gte('fecha_creacion', filtros.fechaDesde);
+    }
+
+    if (filtros.fechaHasta) {
+      query = query.lte('fecha_creacion', filtros.fechaHasta);
     }
 
     const { data, error } = await query;
 
     if (error) {
-      console.error('Error fetching calls:', error);
+      console.error('Error al obtener llamadas:', error);
       throw error;
     }
     return data;
   },
 
-  // Get single call by ID
-  async getCallById(id) {
+  // Obtener una llamada específica por ID
+  async obtenerLlamadaPorId(id) {
     const { data, error } = await supabase
-      .from('emergency_calls')
+      .from('llamadas_emergencia')
       .select('*')
       .eq('id', id)
       .single();
 
     if (error) {
-      console.error('Error fetching call:', error);
+      console.error('Error al obtener llamada:', error);
       throw error;
     }
     return data;
   },
 
-  // Update call
-  async updateCall(id, updates) {
+  // Actualizar una llamada existente
+  async actualizarLlamada(id, actualizaciones) {
     const { data, error } = await supabase
-      .from('emergency_calls')
-      .update(updates)
+      .from('llamadas_emergencia')
+      .update(actualizaciones)
       .eq('id', id)
       .select();
 
     if (error) {
-      console.error('Error updating call:', error);
+      console.error('Error al actualizar llamada:', error);
       throw error;
     }
     return data[0];
   },
 
-  // Delete call
-  async deleteCall(id) {
+  // Eliminar una llamada
+  async eliminarLlamada(id) {
     const { error } = await supabase
-      .from('emergency_calls')
+      .from('llamadas_emergencia')
       .delete()
       .eq('id', id);
 
     if (error) {
-      console.error('Error deleting call:', error);
+      console.error('Error al eliminar llamada:', error);
       throw error;
     }
     return true;
   },
 
-  // Add transcript entry
-  async addTranscriptEntry(callId, entry) {
-    const call = await this.getCallById(callId);
-    const transcript = call.transcript || [];
-    transcript.push(entry);
+  // Agregar entrada a la transcripción
+  async agregarEntradaTranscripcion(idLlamada, entrada) {
+    const llamada = await this.obtenerLlamadaPorId(idLlamada);
+    const transcripcion = llamada.transcripcion || [];
+    transcripcion.push(entrada);
 
-    return this.updateCall(callId, { transcript });
+    return this.actualizarLlamada(idLlamada, { transcripcion });
+  },
+
+  // Obtener estadísticas del día
+  async obtenerEstadisticasDelDia() {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+
+    const { data, error } = await supabase
+      .from('llamadas_emergencia')
+      .select('id, estado, prioridad, tipo_emergencia')
+      .gte('fecha_creacion', hoy.toISOString());
+
+    if (error) {
+      console.error('Error al obtener estadísticas:', error);
+      throw error;
+    }
+
+    return {
+      total: data.length,
+      activas: data.filter(l => l.estado === 'activa').length,
+      completadas: data.filter(l => l.estado === 'completada').length,
+      porTipo: data.reduce((acc, l) => {
+        acc[l.tipo_emergencia] = (acc[l.tipo_emergencia] || 0) + 1;
+        return acc;
+      }, {}),
+      porPrioridad: data.reduce((acc, l) => {
+        acc[l.prioridad] = (acc[l.prioridad] || 0) + 1;
+        return acc;
+      }, {})
+    };
   }
 };
 
-// Reports Service
-export const reportsService = {
-  async createReport(reportData) {
+// Servicio de Reportes
+export const reportesService = {
+  async crearReporte(datosReporte) {
     const { data, error } = await supabase
-      .from('emergency_reports')
-      .insert([reportData])
+      .from('reportes_emergencia')
+      .insert([datosReporte])
       .select();
 
     if (error) {
-      console.error('Error creating report:', error);
+      console.error('Error al crear reporte:', error);
       throw error;
     }
     return data[0];
   },
 
-  async getReportsByCallId(callId) {
+  async obtenerReportesPorLlamada(idLlamada) {
     const { data, error } = await supabase
-      .from('emergency_reports')
+      .from('reportes_emergencia')
       .select('*')
-      .eq('call_id', callId);
+      .eq('llamada_id', idLlamada);
 
     if (error) {
-      console.error('Error fetching reports:', error);
+      console.error('Error al obtener reportes:', error);
       throw error;
     }
     return data;

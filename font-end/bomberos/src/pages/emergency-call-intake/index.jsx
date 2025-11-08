@@ -4,7 +4,7 @@ import Header from '../../components/ui/Header';
 import Breadcrumb from '../../components/ui/Breadcrumb';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/AppIcon';
-import { emergencyCallsService } from '../../services/supabaseClient';
+import { llamadasEmergenciaService } from '../../services/supabaseClient';
 
 // Import all components
 import CallerInformationForm from './components/CallerInformationForm';
@@ -178,27 +178,31 @@ const EmergencyCallIntake = () => {
     setCallStatus('completed');
     setIsRecording(false);
 
-    // Save to Supabase
+    // Guardar en Supabase
     try {
-      const callData = {
-        callerName: callerInfo.name,
-        callerPhone: callerInfo.phone,
-        callerAddress: callerInfo.address,
-        emergencyType: classification.type,
-        priority: classification.priority,
-        description: callerInfo.additionalInfo,
-        transcript: transcript,
-        locationLat: location?.lat,
-        locationLng: location?.lng,
-        status: 'completed'
+      const datosLlamada = {
+        nombreLlamante: callerInfo.name,
+        telefonoLlamante: callerInfo.phone,
+        direccionLlamante: callerInfo.address,
+        tipoEmergencia: classification.type,
+        prioridad: classification.priority,
+        descripcion: callerInfo.additionalInfo,
+        transcripcion: transcript,
+        ubicacionLatitud: location?.lat,
+        ubicacionLongitud: location?.lng,
+        estado: 'completada',
+        nivelRiesgo: classification.riskLevel,
+        recursosNecesarios: classification.resourcesNeeded,
+        unidadesEstimadas: classification.estimatedUnits,
+        tiempoEstimado: classification.estimatedTime
       };
 
-      const savedCall = await emergencyCallsService.createCall(callData);
-      setCurrentCallId(savedCall.id);
+      const llamadaGuardada = await llamadasEmergenciaService.crearLlamada(datosLlamada);
+      setCurrentCallId(llamadaGuardada.id);
       alert('✅ Llamada guardada exitosamente en la base de datos');
     } catch (error) {
-      console.error('Error saving call:', error);
-      alert('⚠️ Error al guardar la llamada');
+      console.error('Error al guardar llamada:', error);
+      alert('⚠️ Error al guardar la llamada. Verifica que la tabla "llamadas_emergencia" exista en Supabase.');
     }
   };
 
