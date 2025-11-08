@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../AppIcon';
 import Button from './Button';
 
@@ -7,6 +7,7 @@ const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const navigationItems = [
     { name: 'Dashboard', href: '/emergency-dashboard', icon: 'LayoutDashboard' },
@@ -23,6 +24,13 @@ const Header = () => {
 
   const toggleMenu = () => setIsMenuOpen(!isMenuOpen);
   const toggleUserMenu = () => setIsUserMenuOpen(!isUserMenuOpen);
+
+  const handleLogout = () => {
+    // Limpiar datos de sesión
+    localStorage.removeItem('emergencyUser');
+    // Redirigir al login
+    navigate('/login');
+  };
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 bg-card border-b border-border">
@@ -129,14 +137,13 @@ const Header = () => {
                     <span>Ayuda</span>
                   </button>
                   <div className="border-t border-border">
-                    <Link
-                      to="/login"
+                    <button
+                      onClick={handleLogout}
                       className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-destructive hover:bg-muted transition-colors duration-150"
-                      onClick={() => setIsUserMenuOpen(false)}
                     >
                       <Icon name="LogOut" size={16} />
                       <span>Cerrar Sesión</span>
-                    </Link>
+                    </button>
                   </div>
                 </div>
               </div>

@@ -5,10 +5,10 @@ import ErrorBoundary from "components/ErrorBoundary";
 //import NotFound from "pages/NotFound";
 import Login from './pages/login';
 import EmergencyCallIntake from './pages/emergency-call-intake';
-//import PersonnelScheduling from './pages/personnel-scheduling';
-//import ResourceManagement from './pages/resource-management';
-//import IncidentDocumentation from './pages/incident-documentation';
-//import EmergencyDashboard from './pages/emergency-dashboard';
+import PersonnelScheduling from './pages/personnel-scheduling';
+import ResourceManagement from './pages/resource-management';
+import IncidentDocumentation from './pages/incident-documentation';
+import EmergencyDashboard from './pages/emergency-dashboard';
 
 const Routes = () => {
   return (
@@ -18,7 +18,11 @@ const Routes = () => {
       <RouterRoutes>
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/emergency-dashboard" element={<EmergencyDashboard />} />
         <Route path="/emergency-call-intake" element={<EmergencyCallIntake />} />
+        <Route path="/personnel-scheduling" element={<PersonnelScheduling />} />
+        <Route path="/resource-management" element={<ResourceManagement />} />
+        <Route path="/incident-documentation" element={<IncidentDocumentation />} />
       </RouterRoutes>
       </ErrorBoundary>
     </BrowserRouter>
@@ -26,11 +30,3 @@ const Routes = () => {
 };
 
 export default Routes;
-
-/*
-        <Route path="/personnel-scheduling" element={<PersonnelScheduling />} />
-        <Route path="/resource-management" element={<ResourceManagement />} />
-        <Route path="/incident-documentation" element={<IncidentDocumentation />} />
-        <Route path="/emergency-dashboard" element={<EmergencyDashboard />} />
-        <Route path="*" element={<NotFound />} />
-*/
