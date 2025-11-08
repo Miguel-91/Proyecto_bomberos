@@ -1,12 +1,403 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/ui/Header';
 import Breadcrumb from '../../components/ui/Breadcrumb';
 import Button from '../../components/ui/Button';
+import Icon from '../../components/AppIcon';
+import { emergencyCallsService } from '../../services/supabaseClient';
+
+// Import all components
+import CallerInformationForm from './components/CallerInformationForm';
+import EmergencyClassification from './components/EmergencyClassification';
+import GuidedQuestioningPanel from './components/GuidedQuestioningPanel';
+import CallTranscriptArea from './components/CallTranscriptArea';
+import QuickActionButtons from './components/QuickActionButtons';
+import LocationMapping from './components/LocationMapping';
+import IncomingCallsQueue from './components/IncomingCallsQueue';
+import CallManagementPanel from './components/CallManagementPanel';
+import EmergencyProtocolGuide from './components/EmergencyProtocolGuide';
 
 const EmergencyCallIntake = () => {
   const navigate = useNavigate();
   const [viewMode, setViewMode] = useState('active-call');
+  const [callStatus, setCallStatus] = useState('active');
+  const [callDuration, setCallDuration] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [activeCall, setActiveCall] = useState(null);
+  const [currentCallId, setCurrentCallId] = useState(null);
+
+  // State for caller information
+  const [callerInfo, setCallerInfo] = useState({
+    name: '',
+    phone: '',
+    address: '',
+    additionalInfo: '',
+    callStatus: 'En línea'
+  });
+
+  // State for emergency classification
+  const [classification, setClassification] = useState({
+    type: '',
+    priority: '',
+    aiConfidence: 0,
+    aiSuggestion: '',
+    manualOverride: false,
+    estimatedUnits: 1,
+    estimatedTime: '',
+    riskLevel: '',
+    resourcesNeeded: ''
+  });
+
+  // State for guided questioning
+  const [questionResponses, setQuestionResponses] = useState([]);
+  const [transcript, setTranscript] = useState([]);
+  const [location, setLocation] = useState(null);
+
+  // Timer for call duration
+  useEffect(() => {
+    let interval;
+    if (callStatus === 'active') {
+      interval = setInterval(() => {
+        setCallDuration(prev => prev + 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [callStatus]);
+
+  const formatDuration = (seconds) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins?.toString()?.padStart(2, '0')}:${secs?.toString()?.padStart(2, '0')}`;
+  };
+
+  // Handler for transcript updates (including auto-fill from voice)
+  const handleTranscriptUpdate = (data) => {
+    if (data.transcript) {
+      setTranscript(data.transcript);
+    }
+
+    // Auto-fill caller info from voice recognition
+    if (data.name || data.phone || data.address) {
+      setCallerInfo(prev => ({
+        ...prev,
+        ...(data.name && { name: data.name }),
+        ...(data.phone && { phone: data.phone }),
+        ...(data.address && { address: data.address })
+      }));
+    }
+  };
+
+  const handleCallerInfoChange = (newInfo) => {
+    setCallerInfo(newInfo);
+  };
+
+  const handleClassificationChange = (newClassification) => {
+    setClassification(newClassification);
+  };
+
+  const handleQuestionResponse = (responses) => {
+    setQuestionResponses(responses);
+  };
+
+  const handleNextQuestion = (response) => {
+    const newTranscriptEntry = {
+      id: transcript?.length + 1,
+      timestamp: new Date()?.toLocaleTimeString('es-ES'),
+      speaker: 'Llamante',
+      message: response?.answer,
+      type: 'caller'
+    };
+    setTranscript([...transcript, newTranscriptEntry]);
+  };
+
+  const handleLocationValidate = (locationData) => {
+    setLocation(locationData);
+  };
+
+  const handleLocationUpdate = (newLocation) => {
+    setLocation(newLocation);
+  };
+
+  const handleToggleRecording = (recording) => {
+    setIsRecording(recording);
+  };
+
+  const handleDispatchResources = async (resourceType) => {
+    console.log(`Dispatching ${resourceType}`);
+    alert(`🚒 Despachando recursos: ${resourceType}`);
+  };
+
+  const handleTransferCall = (transferData) => {
+    console.log('Transferring call:', transferData);
+    alert(`📞 Transfiriendo llamada a: ${transferData.label}`);
+  };
+
+  const handleHoldCall = (isHold) => {
+    console.log('Call hold status:', isHold);
+    setCallerInfo(prev => ({
+      ...prev,
+      callStatus: isHold ? 'En espera' : 'En línea'
+    }));
+  };
+
+  const handleAcceptIncomingCall = (call) => {
+    setActiveCall(call);
+    setViewMode('active-call');
+    setCallStatus('active');
+    setCallDuration(0);
+    setIsRecording(false);
+
+    setCallerInfo({
+      name: '',
+      phone: call?.callerNumber,
+      address: call?.location,
+      additionalInfo: '',
+      callStatus: 'En línea'
+    });
+
+    if (call?.aiPrediction) {
+      setClassification({
+        type: call?.aiPrediction?.type?.toLowerCase(),
+        priority: call?.aiPrediction?.urgencyLevel?.toLowerCase(),
+        aiConfidence: call?.aiPrediction?.confidence,
+        aiSuggestion: call?.aiPrediction?.type,
+        manualOverride: false,
+        estimatedUnits: 2,
+        estimatedTime: '8-12',
+        riskLevel: 'Alto',
+        resourcesNeeded: 'Estándar'
+      });
+    }
+  };
+
+  const handleRejectIncomingCall = (call) => {
+    console.log('Call rejected:', call);
+  };
+
+  const handleCompleteCall = async () => {
+    setCallStatus('completed');
+    setIsRecording(false);
+
+    // Save to Supabase
+    try {
+      const callData = {
+        callerName: callerInfo.name,
+        callerPhone: callerInfo.phone,
+        callerAddress: callerInfo.address,
+        emergencyType: classification.type,
+        priority: classification.priority,
+        description: callerInfo.additionalInfo,
+        transcript: transcript,
+        locationLat: location?.lat,
+        locationLng: location?.lng,
+        status: 'completed'
+      };
+
+      const savedCall = await emergencyCallsService.createCall(callData);
+      setCurrentCallId(savedCall.id);
+      alert('✅ Llamada guardada exitosamente en la base de datos');
+    } catch (error) {
+      console.error('Error saving call:', error);
+      alert('⚠️ Error al guardar la llamada');
+    }
+  };
+
+  const handleEndCall = () => {
+    if (window.confirm('¿Está seguro de que desea finalizar la llamada?')) {
+      setCallStatus('ended');
+      setIsRecording(false);
+      navigate('/login');
+    }
+  };
+
+  const handleCreateIncident = () => {
+    navigate('/incident-documentation', {
+      state: {
+        callerInfo,
+        classification,
+        responses: questionResponses,
+        location,
+        transcript
+      }
+    });
+  };
+
+  // Prepare data for PDF generation
+  const getPDFData = () => {
+    return {
+      id: currentCallId || Date.now(),
+      callerName: callerInfo.name,
+      callerPhone: callerInfo.phone,
+      callerAddress: callerInfo.address,
+      emergencyType: classification.type,
+      priority: classification.priority,
+      status: callStatus,
+      riskLevel: classification.riskLevel,
+      description: callerInfo.additionalInfo,
+      transcript: transcript,
+      locationLat: location?.lat,
+      locationLng: location?.lng,
+      resourcesDispatched: `${classification.estimatedUnits} unidades`
+    };
+  };
+
+  const renderViewContent = () => {
+    switch (viewMode) {
+      case 'queue':
+        return (
+          <div className="space-y-6">
+            <IncomingCallsQueue
+              onAcceptCall={handleAcceptIncomingCall}
+              onRejectCall={handleRejectIncomingCall}
+            />
+
+            {/* Dashboard Statistics */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <div className="bg-card rounded-lg border border-border p-4">
+                <div className="flex items-center space-x-2">
+                  <Icon name="Phone" className="text-blue-500" size={20} />
+                  <div>
+                    <div className="text-2xl font-bold text-foreground">3</div>
+                    <div className="text-sm text-muted-foreground">En Espera</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-card rounded-lg border border-border p-4">
+                <div className="flex items-center space-x-2">
+                  <Icon name="CheckCircle" className="text-green-500" size={20} />
+                  <div>
+                    <div className="text-2xl font-bold text-foreground">12</div>
+                    <div className="text-sm text-muted-foreground">Atendidas Hoy</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-card rounded-lg border border-border p-4">
+                <div className="flex items-center space-x-2">
+                  <Icon name="Clock" className="text-yellow-500" size={20} />
+                  <div>
+                    <div className="text-2xl font-bold text-foreground">2:30</div>
+                    <div className="text-sm text-muted-foreground">Tiempo Promedio</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-card rounded-lg border border-border p-4">
+                <div className="flex items-center space-x-2">
+                  <Icon name="TrendingUp" className="text-primary" size={20} />
+                  <div>
+                    <div className="text-2xl font-bold text-foreground">94%</div>
+                    <div className="text-sm text-muted-foreground">Eficiencia IA</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'ai-assistant':
+        return (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <EmergencyProtocolGuide
+              emergencyType={classification?.type}
+              currentStep={0}
+              onStepComplete={(step) => console.log('Protocol step completed:', step)}
+            />
+
+            <div className="space-y-6">
+              <CallTranscriptArea
+                transcript={transcript}
+                isRecording={isRecording}
+                onToggleRecording={handleToggleRecording}
+                onTranscriptUpdate={handleTranscriptUpdate}
+              />
+
+              <div className="bg-card rounded-lg border border-border p-6">
+                <h3 className="text-lg font-semibold text-foreground mb-4">
+                  Información Auto-completada
+                </h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Nombre:</span>
+                    <span className="text-foreground font-medium">{callerInfo.name || '-'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Teléfono:</span>
+                    <span className="text-foreground font-medium">{callerInfo.phone || '-'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Dirección:</span>
+                    <span className="text-foreground font-medium">{callerInfo.address || '-'}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+
+      case 'active-call':
+      default:
+        return (
+          <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            {/* Left Column - Forms and Classification */}
+            <div className="xl:col-span-2 space-y-6">
+              <CallerInformationForm
+                callerInfo={callerInfo}
+                onCallerInfoChange={handleCallerInfoChange}
+                onLocationValidate={handleLocationValidate}
+              />
+
+              <EmergencyClassification
+                classification={classification}
+                onClassificationChange={handleClassificationChange}
+              />
+
+              <GuidedQuestioningPanel
+                emergencyType={classification?.type}
+                responses={questionResponses}
+                onResponseChange={handleQuestionResponse}
+                onNextQuestion={handleNextQuestion}
+              />
+
+              <LocationMapping
+                location={location}
+                onLocationUpdate={handleLocationUpdate}
+                nearbyUnits={[
+                  { name: 'Unidad 1', distance: '2.3 km' },
+                  { name: 'Unidad 3', distance: '3.8 km' }
+                ]}
+              />
+            </div>
+
+            {/* Right Column - Transcript, Management and Actions */}
+            <div className="space-y-6">
+              <CallTranscriptArea
+                transcript={transcript}
+                isRecording={isRecording}
+                onToggleRecording={handleToggleRecording}
+                onTranscriptUpdate={handleTranscriptUpdate}
+              />
+
+              <CallManagementPanel
+                onTransferCall={handleTransferCall}
+                onHoldCall={handleHoldCall}
+                onMergeCall={(callData) => console.log('Merging call:', callData)}
+                onCreateConference={(participants) => console.log('Creating conference:', participants)}
+                callData={activeCall}
+              />
+
+              <QuickActionButtons
+                callData={getPDFData()}
+                onDispatchResources={handleDispatchResources}
+                onTransferCall={handleTransferCall}
+                onCreateIncident={handleCreateIncident}
+              />
+            </div>
+          </div>
+        );
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -15,191 +406,94 @@ const EmergencyCallIntake = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Breadcrumb />
 
-          {/* Page Title */}
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold text-foreground mb-2">
-              📞 Recepción de Llamadas de Emergencia
-            </h1>
-            <p className="text-muted-foreground">
-              Sistema de gestión y clasificación de llamadas de emergencia
-            </p>
-          </div>
-
           {/* Navigation Tabs */}
           <div className="bg-card rounded-lg border border-border p-2 mb-6">
             <div className="flex space-x-2">
               <button
                 onClick={() => setViewMode('queue')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'queue'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center space-x-2 ${
+                  viewMode === 'queue' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
-                Cola de Llamadas
+                <span>📋 Cola de Llamadas</span>
               </button>
 
               <button
                 onClick={() => setViewMode('active-call')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'active-call'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center space-x-2 ${
+                  viewMode === 'active-call' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
-                Llamada Activa
+                <span>📞 Llamada Activa</span>
               </button>
 
               <button
                 onClick={() => setViewMode('ai-assistant')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
-                  viewMode === 'ai-assistant'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center space-x-2 ${
+                  viewMode === 'ai-assistant' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
-                Asistente IA
+                <span>🤖 Asistente IA</span>
               </button>
             </div>
           </div>
 
-          {/* Content Area */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Main Content */}
-            <div className="lg:col-span-2 space-y-6">
-              {/* Call Information Card */}
-              <div className="bg-card rounded-lg border border-border p-6">
-                <h2 className="text-xl font-semibold mb-4 text-foreground">
-                  Información de la Llamada
-                </h2>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">
-                      Nombre del llamante
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
-                      placeholder="Ingrese el nombre"
-                    />
+          {/* Call Status Header */}
+          {callStatus !== 'idle' && (
+            <div className="bg-card rounded-lg border border-border p-4 mb-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <div className="flex items-center space-x-2">
+                    <div className={`w-3 h-3 rounded-full ${
+                      callStatus === 'active' ? 'bg-success animate-pulse' :
+                      callStatus === 'completed' ? 'bg-warning' : 'bg-muted-foreground'
+                    }`}></div>
+                    <span className="font-medium text-foreground">
+                      {callStatus === 'active' ? 'Llamada Activa' :
+                       callStatus === 'completed' ? 'Llamada Completada' : 'Llamada Finalizada'}
+                    </span>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">
-                      Número de teléfono
-                    </label>
-                    <input
-                      type="tel"
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
-                      placeholder="Ingrese el teléfono"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">
-                      Dirección de la emergencia
-                    </label>
-                    <input
-                      type="text"
-                      className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground"
-                      placeholder="Ingrese la dirección"
-                    />
+                  <div className="flex items-center space-x-2 text-muted-foreground">
+                    <Icon name="Clock" size={16} />
+                    <span className="text-sm">Duración: {formatDuration(callDuration)}</span>
                   </div>
                 </div>
-              </div>
 
-              {/* Emergency Classification */}
-              <div className="bg-card rounded-lg border border-border p-6">
-                <h2 className="text-xl font-semibold mb-4 text-foreground">
-                  Clasificación de Emergencia
-                </h2>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">
-                      Tipo de Emergencia
-                    </label>
-                    <select className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground">
-                      <option>Incendio</option>
-                      <option>Rescate</option>
-                      <option>Accidente</option>
-                      <option>Médica</option>
-                      <option>Otro</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-muted-foreground mb-1">
-                      Prioridad
-                    </label>
-                    <select className="w-full px-3 py-2 border border-input rounded-md bg-background text-foreground">
-                      <option>Crítica</option>
-                      <option>Alta</option>
-                      <option>Media</option>
-                      <option>Baja</option>
-                    </select>
-                  </div>
+                <div className="flex items-center space-x-2">
+                  {callStatus === 'active' && (
+                    <>
+                      <Button
+                        variant="success"
+                        onClick={handleCompleteCall}
+                        iconName="Check"
+                      >
+                        Completar Llamada
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        onClick={handleEndCall}
+                        iconName="PhoneOff"
+                      >
+                        Finalizar
+                      </Button>
+                    </>
+                  )}
+                  {callStatus === 'completed' && (
+                    <Button
+                      variant="default"
+                      onClick={() => navigate('/login')}
+                      iconName="ArrowLeft"
+                    >
+                      Volver al Login
+                    </Button>
+                  )}
                 </div>
               </div>
             </div>
+          )}
 
-            {/* Sidebar */}
-            <div className="space-y-6">
-              {/* Statistics Card */}
-              <div className="bg-card rounded-lg border border-border p-6">
-                <h3 className="text-lg font-semibold mb-4 text-foreground">Estadísticas</h3>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Llamadas en espera</span>
-                    <span className="text-lg font-bold text-foreground">3</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Atendidas hoy</span>
-                    <span className="text-lg font-bold text-foreground">12</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Tiempo promedio</span>
-                    <span className="text-lg font-bold text-foreground">2:30</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="text-sm text-muted-foreground">Estado IA</span>
-                    <div className="flex items-center space-x-2">
-                      <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-                      <span className="text-sm text-foreground">Activo</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="bg-card rounded-lg border border-border p-6">
-                <h3 className="text-lg font-semibold mb-4 text-foreground">Acciones Rápidas</h3>
-                <div className="space-y-2">
-                  <Button variant="default" className="w-full">
-                    🚒 Despachar Unidades
-                  </Button>
-                  <Button variant="outline" className="w-full">
-                    📋 Crear Incidente
-                  </Button>
-                  <Button variant="outline" className="w-full">
-                    📞 Transferir Llamada
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    className="w-full"
-                    onClick={() => navigate('/login')}
-                  >
-                    ⬅️ Volver al Login
-                  </Button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Info Banner */}
-          <div className="mt-6 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <p className="text-sm text-blue-800 dark:text-blue-200">
-              💡 <strong>Nota:</strong> Esta es una versión simplificada del módulo de recepción de llamadas.
-              Los componentes completos con IA, mapas, transcripción en tiempo real y más funcionalidades
-              pueden ser desarrollados según tus necesidades.
-            </p>
-          </div>
+          {/* Dynamic Content Based on View Mode */}
+          {renderViewContent()}
         </div>
       </main>
     </div>
