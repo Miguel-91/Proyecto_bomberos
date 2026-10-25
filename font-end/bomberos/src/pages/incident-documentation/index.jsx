@@ -7,6 +7,7 @@ import Icon from '../../components/AppIcon';
 import IncidentActions, { StatusBadge, IncidentTimeline, ResolutionSummary } from '../../components/IncidentActions';
 import { getCurrentUser, hasPermission } from '../../utils/auth';
 import { useIncidents, useUnits } from '../../utils/dataStore';
+import { downloadIncidentReport } from '../../utils/reportExport';
 import {
   EMERGENCY_TYPES,
   PRIORITIES,
@@ -31,6 +32,14 @@ const IncidentDocumentation = () => {
 
   const selected = incidents?.find((i) => i?.id === selectedId);
   const filtered = incidents?.filter((i) => statusFilter === 'all' || i?.status === statusFilter);
+
+  // Rango de fechas del reporte estadístico
+  const [reportFrom, setReportFrom] = useState('');
+  const [reportTo, setReportTo] = useState('');
+  const reportIncidents = filtered?.filter((i) => {
+    const day = i?.reportedAt?.slice(0, 10);
+    return (!reportFrom || day >= reportFrom) && (!reportTo || day <= reportTo);
+  });
 
   const updateForm = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -74,11 +83,29 @@ const IncidentDocumentation = () => {
               <h1 className="text-2xl font-bold text-foreground">Tickets de Emergencia</h1>
               <p className="text-muted-foreground">Seguimiento del estado de cada emergencia hasta su dictamen final</p>
             </div>
-            {canCreate && (
-              <Button iconName={showForm ? 'X' : 'Plus'} variant={showForm ? 'outline' : 'default'} onClick={() => setShowForm(!showForm)}>
-                {showForm ? 'Cancelar' : 'Nuevo Ticket'}
+            <div className="flex flex-wrap items-end gap-2">
+              <div>
+                <label className="block text-xs text-muted-foreground">Desde</label>
+                <input type="date" className="h-9 rounded-md border border-input bg-background px-2 text-sm" value={reportFrom} onChange={(e) => setReportFrom(e?.target?.value)} />
+              </div>
+              <div>
+                <label className="block text-xs text-muted-foreground">Hasta</label>
+                <input type="date" className="h-9 rounded-md border border-input bg-background px-2 text-sm" value={reportTo} onChange={(e) => setReportTo(e?.target?.value)} />
+              </div>
+              <Button
+                variant="outline"
+                iconName="Download"
+                onClick={() => downloadIncidentReport(reportIncidents, units, { from: reportFrom, to: reportTo })}
+                disabled={!reportIncidents?.length}
+              >
+                Descargar reporte PDF ({reportIncidents?.length})
               </Button>
-            )}
+              {canCreate && (
+                <Button iconName={showForm ? 'X' : 'Plus'} variant={showForm ? 'outline' : 'default'} onClick={() => setShowForm(!showForm)}>
+                  {showForm ? 'Cancelar' : 'Nuevo Ticket'}
+                </Button>
+              )}
+            </div>
           </div>
 
           {/* Status summary / filter */}
