@@ -4,7 +4,6 @@ import Icon from '../../components/AppIcon';
 import LoginForm from './components/LoginForm';
 import SecurityBadges from './components/SecurityBadges';
 import LanguageSelector from './components/LanguageSelector';
-import MockCredentialsDisplay from './components/MockCredentialsDisplay';
 import BrandLogo from '../../components/ui/BrandLogo';
 import { APP_NAME, APP_SUBTITLE, ORGANIZATION, EMERGENCY_NUMBERS } from '../../utils/brand';
 
@@ -136,9 +135,6 @@ const Login = () => {
 
             {/* Login Form */}
             <LoginForm />
-
-            {/* Mock Credentials Display */}
-            <MockCredentialsDisplay />
 
             {/* Security Information - Mobile */}
             <div className="lg:hidden mt-8">

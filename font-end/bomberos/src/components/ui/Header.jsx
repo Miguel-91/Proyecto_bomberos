@@ -4,6 +4,7 @@ import Icon from '../AppIcon';
 import Button from './Button';
 import BrandLogo from './BrandLogo';
 import { APP_NAME } from '../../utils/brand';
+import { getCurrentUser, getRoleLabel, hasPermission } from '../../utils/auth';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -11,30 +12,26 @@ const Header = () => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const storedUser = JSON.parse(localStorage.getItem('emergencyUser') || 'null');
-  const roleLabels = {
-    dispatcher: 'Despachador',
-    chief: 'Jefe de Compañía',
-    volunteer: 'Bombero Voluntario',
-    admin: 'Administrador',
-  };
-
   const handleLogout = () => {
     localStorage.removeItem('emergencyUser');
     setIsUserMenuOpen(false);
     navigate('/login');
   };
 
+  const storedUser = getCurrentUser();
+  const allowed = (item) => hasPermission(storedUser, item?.permission);
+
   const navigationItems = [
-    { name: 'Dashboard', href: '/emergency-dashboard', icon: 'LayoutDashboard' },
-    { name: 'Emergencias', href: '/emergency-call-intake', icon: 'Phone' },
-    { name: 'Recursos', href: '/resource-management', icon: 'Users' },
-    { name: 'Documentación', href: '/incident-documentation', icon: 'FileText' },
-  ];
+    { name: 'Dashboard', href: '/emergency-dashboard', icon: 'LayoutDashboard', permission: 'dashboard.view' },
+    { name: 'Emergencias', href: '/emergency-call-intake', icon: 'Phone', permission: 'emergencies.manage' },
+    { name: 'Tickets', href: '/incident-documentation', icon: 'FileText', permission: 'incidents.view' },
+    { name: 'Personal', href: '/personnel-scheduling', icon: 'Calendar', permission: 'personnel.view' },
+  ]?.filter(allowed);
 
   const moreItems = [
-    { name: 'Personal', href: '/personnel-scheduling', icon: 'Calendar' },
-  ];
+    { name: 'Recursos', href: '/resource-management', icon: 'Truck', permission: 'resources.view' },
+    { name: 'Configuración', href: '/system-settings', icon: 'Settings', permission: 'settings.manage' },
+  ]?.filter(allowed);
 
   const isActive = (href) => location?.pathname === href;
 
@@ -70,6 +67,7 @@ const Header = () => {
           ))}
           
           {/* More Menu */}
+          {moreItems?.length > 0 && (
           <div className="relative">
             <Button
               variant="ghost"
@@ -103,6 +101,7 @@ const Header = () => {
               </div>
             )}
           </div>
+          )}
         </nav>
 
         {/* Right Side - Emergency Status & User Menu */}
@@ -133,12 +132,18 @@ const Header = () => {
                 <div className="py-1">
                   <div className="px-3 py-2 text-sm text-muted-foreground border-b border-border">
                     <div className="font-medium text-foreground">{storedUser?.name || 'Operador'}</div>
-                    <div>{roleLabels?.[storedUser?.role] || 'Despachador'}</div>
+                    <div>{getRoleLabel(storedUser?.role)}</div>
                   </div>
-                  <button className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-colors duration-150">
-                    <Icon name="Settings" size={16} />
-                    <span>Configuración</span>
-                  </button>
+                  {hasPermission(storedUser, 'settings.manage') && (
+                    <Link
+                      to="/system-settings"
+                      className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-colors duration-150"
+                      onClick={() => setIsUserMenuOpen(false)}
+                    >
+                      <Icon name="Settings" size={16} />
+                      <span>Configuración</span>
+                    </Link>
+                  )}
                   <button className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-colors duration-150">
                     <Icon name="HelpCircle" size={16} />
                     <span>Ayuda</span>

@@ -42,9 +42,11 @@ const QuickActionButtons = ({ onDispatchResources, onTransferCall, onCreateIncid
         >
           Transferir a PNC (110)
         </Button>
-        <Button variant="success" size="sm" fullWidth iconName="FilePlus" onClick={onCreateIncident}>
-          Crear Reporte de Incidente
-        </Button>
+        {onCreateIncident && (
+          <Button variant="success" size="sm" fullWidth iconName="TicketPlus" onClick={onCreateIncident}>
+            Crear Ticket de Emergencia
+          </Button>
+        )}
       </div>
     </div>
   );
