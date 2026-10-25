@@ -1,12 +1,29 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import Icon from '../AppIcon';
 import Button from './Button';
+import BrandLogo from './BrandLogo';
+import { APP_NAME } from '../../utils/brand';
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
+
+  const storedUser = JSON.parse(localStorage.getItem('emergencyUser') || 'null');
+  const roleLabels = {
+    dispatcher: 'Despachador',
+    chief: 'Jefe de Compañía',
+    volunteer: 'Bombero Voluntario',
+    admin: 'Administrador',
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem('emergencyUser');
+    setIsUserMenuOpen(false);
+    navigate('/login');
+  };
 
   const navigationItems = [
     { name: 'Dashboard', href: '/emergency-dashboard', icon: 'LayoutDashboard' },
@@ -30,10 +47,8 @@ const Header = () => {
         {/* Logo */}
         <div className="flex items-center">
           <Link to="/emergency-dashboard" className="flex items-center space-x-2">
-            <div className="flex items-center justify-center w-8 h-8 bg-primary rounded-lg">
-              <Icon name="Shield" size={20} color="white" />
-            </div>
-            <span className="text-xl font-semibold text-foreground">EmergencyHub</span>
+            <BrandLogo size={36} />
+            <span className="hidden sm:block text-lg font-semibold text-foreground">{APP_NAME}</span>
           </Link>
         </div>
 
@@ -109,7 +124,7 @@ const Header = () => {
               <div className="w-8 h-8 bg-muted rounded-full flex items-center justify-center">
                 <Icon name="User" size={16} />
               </div>
-              <span className="hidden md:block text-sm font-medium">Dispatcher</span>
+              <span className="hidden md:block text-sm font-medium">{storedUser?.name || 'Operador'}</span>
               <Icon name="ChevronDown" size={16} />
             </Button>
 
@@ -117,8 +132,8 @@ const Header = () => {
               <div className="absolute right-0 mt-2 w-48 bg-popover border border-border rounded-md shadow-modal z-50">
                 <div className="py-1">
                   <div className="px-3 py-2 text-sm text-muted-foreground border-b border-border">
-                    <div className="font-medium text-foreground">Juan Pérez</div>
-                    <div>Despachador Principal</div>
+                    <div className="font-medium text-foreground">{storedUser?.name || 'Operador'}</div>
+                    <div>{roleLabels?.[storedUser?.role] || 'Despachador'}</div>
                   </div>
                   <button className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-popover-foreground hover:bg-muted transition-colors duration-150">
                     <Icon name="Settings" size={16} />
@@ -129,14 +144,13 @@ const Header = () => {
                     <span>Ayuda</span>
                   </button>
                   <div className="border-t border-border">
-                    <Link
-                      to="/login"
+                    <button
                       className="flex items-center space-x-2 w-full px-3 py-2 text-sm text-destructive hover:bg-muted transition-colors duration-150"
-                      onClick={() => setIsUserMenuOpen(false)}
+                      onClick={handleLogout}
                     >
                       <Icon name="LogOut" size={16} />
                       <span>Cerrar Sesión</span>
-                    </Link>
+                    </button>
                   </div>
                 </div>
               </div>

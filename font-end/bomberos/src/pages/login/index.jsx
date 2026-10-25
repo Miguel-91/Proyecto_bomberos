@@ -5,6 +5,8 @@ import LoginForm from './components/LoginForm';
 import SecurityBadges from './components/SecurityBadges';
 import LanguageSelector from './components/LanguageSelector';
 import MockCredentialsDisplay from './components/MockCredentialsDisplay';
+import BrandLogo from '../../components/ui/BrandLogo';
+import { APP_NAME, APP_SUBTITLE, ORGANIZATION, EMERGENCY_NUMBERS } from '../../utils/brand';
 
 const Login = () => {
   const navigate = useNavigate();
@@ -36,13 +38,13 @@ const Login = () => {
           <div className="relative z-10 flex flex-col justify-between w-full">
             {/* Logo and Branding */}
             <div>
-              <div className="flex items-center space-x-3 mb-8">
-                <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
-                  <Icon name="Shield" size={28} color="white" />
+              <div className="flex items-center space-x-4 mb-8">
+                <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center p-1 shadow-lg">
+                  <BrandLogo size={72} />
                 </div>
                 <div>
-                  <h1 className="text-3xl font-bold">EmergencyHub</h1>
-                  <p className="text-white/80 text-sm">Sistema de Gestión de Emergencias</p>
+                  <h1 className="text-3xl font-bold">{APP_NAME}</h1>
+                  <p className="text-white/80 text-sm">{APP_SUBTITLE}</p>
                 </div>
               </div>
 
@@ -103,7 +105,7 @@ const Login = () => {
               </div>
               
               <p className="text-xs text-white/60">
-                © {new Date()?.getFullYear()} EmergencyHub. Todos los derechos reservados. 
+                © {new Date()?.getFullYear()} {ORGANIZATION}. Todos los derechos reservados. 
                 Diseñado específicamente para servicios de emergencia.
               </p>
             </div>
@@ -115,13 +117,11 @@ const Login = () => {
           <div className="w-full max-w-md">
             {/* Mobile Logo */}
             <div className="lg:hidden text-center mb-8">
-              <div className="flex items-center justify-center space-x-3 mb-4">
-                <div className="w-10 h-10 bg-primary rounded-xl flex items-center justify-center">
-                  <Icon name="Shield" size={24} color="white" />
-                </div>
-                <h1 className="text-2xl font-bold text-foreground">EmergencyHub</h1>
+              <div className="flex flex-col items-center space-y-3 mb-4">
+                <BrandLogo size={80} />
+                <h1 className="text-2xl font-bold text-foreground">{APP_NAME}</h1>
               </div>
-              <p className="text-muted-foreground">Sistema de Gestión de Emergencias</p>
+              <p className="text-muted-foreground">{APP_SUBTITLE}</p>
             </div>
 
             {/* Login Header */}
@@ -157,20 +157,17 @@ const Login = () => {
                     Si tiene una emergencia real, no use este sistema. Llame inmediatamente:
                   </p>
                   <div className="flex items-center space-x-4">
-                    <a 
-                      href="tel:112" 
-                      className="flex items-center space-x-1 text-sm font-bold text-destructive hover:underline"
-                    >
-                      <Icon name="Phone" size={14} />
-                      <span>112</span>
-                    </a>
-                    <a 
-                      href="tel:080" 
-                      className="flex items-center space-x-1 text-sm font-bold text-destructive hover:underline"
-                    >
-                      <Icon name="Phone" size={14} />
-                      <span>080</span>
-                    </a>
+                    {EMERGENCY_NUMBERS?.map((item) => (
+                      <a
+                        key={item?.number}
+                        href={`tel:${item?.number}`}
+                        title={item?.label}
+                        className="flex items-center space-x-1 text-sm font-bold text-destructive hover:underline"
+                      >
+                        <Icon name="Phone" size={14} />
+                        <span>{item?.number}</span>
+                      </a>
+                    ))}
                   </div>
                 </div>
               </div>
