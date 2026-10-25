@@ -4,6 +4,7 @@ import Header from '../../components/ui/Header';
 import Breadcrumb from '../../components/ui/Breadcrumb';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/AppIcon';
+import { getEmergencyType } from '../../utils/emergencyData';
 
 // Import components
 import CallerInformationForm from './components/CallerInformationForm';
@@ -134,7 +135,7 @@ const EmergencyCallIntake = () => {
       type: analysis?.emergencyType,
       priority: analysis?.priority,
       aiConfidence: analysis?.confidence,
-      aiSuggestion: analysis?.emergencyType,
+      aiSuggestion: getEmergencyType(analysis?.emergencyType)?.label,
       estimatedUnits: analysis?.recommendedUnits,
       estimatedTime: analysis?.estimatedResponseTime
     });
@@ -174,7 +175,7 @@ const EmergencyCallIntake = () => {
         type: call?.aiPrediction?.type?.toLowerCase(),
         priority: call?.aiPrediction?.urgencyLevel?.toLowerCase(),
         aiConfidence: call?.aiPrediction?.confidence,
-        aiSuggestion: call?.aiPrediction?.type,
+        aiSuggestion: getEmergencyType(call?.aiPrediction?.type)?.label,
         manualOverride: false,
         estimatedUnits: 2,
         estimatedTime: '8-12',
@@ -408,7 +409,7 @@ const EmergencyCallIntake = () => {
                   viewMode === 'queue' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
                 }`}
               >
-                <Icon name="Queue" size={16} />
+                <Icon name="ListOrdered" size={16} />
                 <span>Cola de Llamadas</span>
               </button>
               
