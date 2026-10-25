@@ -67,18 +67,101 @@ export const PERSONNEL_STATUS = {
   leave: { label: 'Permiso', className: 'bg-warning/10 text-warning' },
 };
 
+const history = (...entries) => entries?.map(([status, at, by, note]) => ({ status, at, by, note }));
+
 export const MOCK_INCIDENTS = [
-  { id: 'INC-2026-0412', type: 'fire', priority: 'critical', address: 'Calle del Arco, Antigua Guatemala', reportedAt: '2026-10-25T08:12:00', status: 'active', units: ['U-01', 'U-04'], description: 'Incendio en cocina de restaurante, humo visible desde la calle.' },
-  { id: 'INC-2026-0411', type: 'medical', priority: 'high', address: '5a Avenida Norte, Antigua Guatemala', reportedAt: '2026-10-25T07:40:00', status: 'active', units: ['U-02'], description: 'Persona adulta con dolor torácico.' },
-  { id: 'INC-2026-0410', type: 'traffic', priority: 'medium', address: 'Carretera a Ciudad Vieja, km 2', reportedAt: '2026-10-24T22:05:00', status: 'closed', units: ['U-03', 'U-05'], description: 'Colisión entre motocicleta y vehículo liviano, dos heridos leves.' },
-  { id: 'INC-2026-0409', type: 'rescue', priority: 'high', address: 'Cerro de la Cruz, Antigua Guatemala', reportedAt: '2026-10-24T17:30:00', status: 'closed', units: ['U-05'], description: 'Turista con lesión en tobillo durante caminata.' },
-  { id: 'INC-2026-0408', type: 'medical', priority: 'low', address: 'Jocotenango, Sacatepéquez', reportedAt: '2026-10-24T11:15:00', status: 'pending', units: [], description: 'Traslado programado de paciente a hospital nacional.' },
+  {
+    id: 'INC-2026-0412', type: 'fire', priority: 'critical', address: 'Calle del Arco, Antigua Guatemala',
+    reportedAt: '2026-10-25T08:12:00', status: 'in-progress', units: ['U-01', 'U-04'],
+    description: 'Incendio en cocina de restaurante, humo visible desde la calle.',
+    caller: { name: 'Rosa Gómez', phone: '5521-4410' },
+    history: history(['open', '2026-10-25T08:12:00', 'Juan Pérez', 'Ticket creado desde llamada'], ['in-progress', '2026-10-25T08:15:00', 'Juan Pérez', 'Autobomba 01 en camino']),
+  },
+  {
+    id: 'INC-2026-0411', type: 'medical', priority: 'high', address: '5a Avenida Norte, Antigua Guatemala',
+    reportedAt: '2026-10-25T07:40:00', status: 'awaiting-review', units: ['U-02'],
+    description: 'Persona adulta con dolor torácico. Trasladada al Hospital Pedro de Bethancourt.',
+    caller: { name: 'Mario Ajú', phone: '4478-2201' },
+    history: history(['open', '2026-10-25T07:40:00', 'Juan Pérez', 'Ticket creado desde llamada'], ['in-progress', '2026-10-25T07:42:00', 'Juan Pérez', null], ['awaiting-review', '2026-10-25T08:30:00', 'Juan Pérez', 'Paciente entregado en hospital']),
+  },
+  {
+    id: 'INC-2026-0410', type: 'traffic', priority: 'medium', address: 'Carretera a Ciudad Vieja, km 2',
+    reportedAt: '2026-10-24T22:05:00', status: 'closed', units: ['U-03', 'U-05'],
+    description: 'Colisión entre motocicleta y vehículo liviano, dos heridos leves.',
+    history: history(['open', '2026-10-24T22:05:00', 'Juan Pérez', null], ['in-progress', '2026-10-24T22:07:00', 'Juan Pérez', null], ['closed', '2026-10-24T23:40:00', 'María Rodríguez', 'Satisfactorio']),
+    resolution: { result: 'satisfactory', notes: 'Heridos atendidos en el lugar, vía despejada.', by: 'María Rodríguez', at: '2026-10-24T23:40:00' },
+  },
+  {
+    id: 'INC-2026-0409', type: 'rescue', priority: 'high', address: 'Cerro de la Cruz, Antigua Guatemala',
+    reportedAt: '2026-10-24T17:30:00', status: 'closed', units: ['U-05'],
+    description: 'Turista con lesión en tobillo durante caminata.',
+    history: history(['open', '2026-10-24T17:30:00', 'Juan Pérez', null], ['closed', '2026-10-24T19:10:00', 'María Rodríguez', 'No satisfactorio']),
+    resolution: { result: 'unsatisfactory', notes: 'Demora de 25 minutos por acceso bloqueado; revisar ruta alterna.', by: 'María Rodríguez', at: '2026-10-24T19:10:00' },
+  },
+  {
+    id: 'INC-2026-0408', type: 'medical', priority: 'low', address: 'Jocotenango, Sacatepéquez',
+    reportedAt: '2026-10-24T11:15:00', status: 'open', units: [],
+    description: 'Traslado programado de paciente a hospital nacional.',
+    history: history(['open', '2026-10-24T11:15:00', 'Juan Pérez', null]),
+  },
 ];
 
+// Flujo del ticket: Abierto -> En atención -> Pendiente de dictamen -> Finalizado (solo jefe)
 export const INCIDENT_STATUS = {
-  active: { label: 'En curso', className: 'bg-destructive/10 text-destructive' },
-  pending: { label: 'Pendiente', className: 'bg-warning/10 text-warning' },
-  closed: { label: 'Cerrado', className: 'bg-success/10 text-success' },
+  open: { label: 'Abierto', className: 'bg-warning/10 text-warning', icon: 'CircleDot' },
+  'in-progress': { label: 'En atención', className: 'bg-destructive/10 text-destructive', icon: 'Siren' },
+  'awaiting-review': { label: 'Pendiente de dictamen', className: 'bg-primary/10 text-primary', icon: 'ClipboardCheck' },
+  closed: { label: 'Finalizado', className: 'bg-success/10 text-success', icon: 'CheckCircle2' },
+};
+
+export const RESOLUTION_RESULTS = {
+  satisfactory: { label: 'Satisfactorio', className: 'text-success', icon: 'ThumbsUp' },
+  unsatisfactory: { label: 'No satisfactorio', className: 'text-destructive', icon: 'ThumbsDown' },
+};
+
+export const DEFAULT_SHIFTS = [
+  { id: 'A', name: 'Turno A', start: '07:00', end: '19:00', notes: 'Turno diurno' },
+  { id: 'B', name: 'Turno B', start: '19:00', end: '07:00', notes: 'Turno nocturno' },
+  { id: 'C', name: 'Turno C', start: '07:00', end: '19:00', notes: 'Reserva / fines de semana' },
+];
+
+export const WEEK_DAYS = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom'];
+export const DEFAULT_ROTATION = ['A', 'B', 'C', 'A', 'B', 'C', 'A'];
+
+export const EVENT_CATEGORIES = {
+  religious: { label: 'Religiosa', icon: 'Church' },
+  patronal: { label: 'Patronal / Feria', icon: 'PartyPopper' },
+  cultural: { label: 'Cultural', icon: 'Music' },
+  sports: { label: 'Deportiva', icon: 'Trophy' },
+  other: { label: 'Otra', icon: 'CalendarDays' },
+};
+
+// Plantillas de actividades frecuentes en Antigua Guatemala
+export const EVENT_PRESETS = [
+  { name: 'Procesión de Semana Santa', category: 'religious', location: 'Recorrido procesional, centro histórico', attendance: 15000 },
+  { name: 'Feria de Santiago Apóstol', category: 'patronal', location: 'Parque Central y Catedral', attendance: 8000 },
+  { name: 'Procesión de Corpus Christi', category: 'religious', location: 'Catedral de San José', attendance: 3000 },
+  { name: 'Quema del Diablo', category: 'cultural', location: 'Barrios del centro histórico', attendance: 5000 },
+];
+
+export const MOCK_EVENTS = [
+  {
+    id: 'EV-01', name: 'Procesión de Jesús Nazareno de La Merced', category: 'religious', date: '2026-11-08',
+    start: '14:00', end: '23:00', location: 'Iglesia La Merced, 6a Avenida Norte', attendance: 6000,
+    assigned: ['P-01', 'P-04', 'P-05', 'P-07'], notes: 'Ambulancia fija en la esquina de La Merced.',
+  },
+];
+
+// Personal sugerido: 1 elemento por cada 500 asistentes (mínimo 2)
+export const suggestedStaff = (attendance) => Math.max(2, Math.ceil((Number(attendance) || 0) / 500));
+
+export const STORAGE_KEYS = {
+  incidents: 'emergencyIncidents',
+  personnel: 'emergencyPersonnel',
+  units: 'emergencyUnits',
+  shifts: 'emergencyShifts',
+  rotation: 'emergencyRotation',
+  events: 'emergencyEvents',
 };
 
 export const formatDateTime = (iso) =>

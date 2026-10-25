@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { useLocation } from 'react-router-dom';
 import Header from '../../components/ui/Header';
 import Breadcrumb from '../../components/ui/Breadcrumb';
 import Button from '../../components/ui/Button';
 import Input from '../../components/ui/Input';
 import Icon from '../../components/AppIcon';
+import IncidentActions, { StatusBadge, IncidentTimeline, ResolutionSummary } from '../../components/IncidentActions';
+import { getCurrentUser, hasPermission } from '../../utils/auth';
+import { useIncidents, useUnits } from '../../utils/dataStore';
 import {
-  MOCK_INCIDENTS,
-  MOCK_UNITS,
   EMERGENCY_TYPES,
   PRIORITIES,
   INCIDENT_STATUS,
@@ -16,25 +16,21 @@ import {
   formatDateTime,
 } from '../../utils/emergencyData';
 
-const IncidentDocumentation = () => {
-  const location = useLocation();
-  // Datos enviados desde la página de recepción de llamadas
-  const fromCall = location?.state;
+const EMPTY_FORM = { type: '', priority: 'medium', address: '', callerName: '', callerPhone: '', description: '', units: [] };
 
-  const [incidents, setIncidents] = useState(MOCK_INCIDENTS);
-  const [showForm, setShowForm] = useState(Boolean(fromCall));
-  const [form, setForm] = useState({
-    type: fromCall?.classification?.type || '',
-    priority: fromCall?.classification?.priority || 'medium',
-    address: fromCall?.callerInfo?.address || '',
-    callerName: fromCall?.callerInfo?.name || '',
-    callerPhone: fromCall?.callerInfo?.phone || '',
-    description: fromCall?.responses?.map((r) => `${r?.question} ${r?.answer}`)?.join('\n') || '',
-    units: [],
-  });
+const IncidentDocumentation = () => {
+  const user = getCurrentUser();
+  const canCreate = hasPermission(user, 'emergencies.manage');
+  const { incidents, createIncident, updateIncident, changeStatus, finalizeIncident } = useIncidents();
+  const [units] = useUnits();
+
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(EMPTY_FORM);
   const [selectedId, setSelectedId] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all');
 
   const selected = incidents?.find((i) => i?.id === selectedId);
+  const filtered = incidents?.filter((i) => statusFilter === 'all' || i?.status === statusFilter);
 
   const updateForm = (field, value) => setForm((prev) => ({ ...prev, [field]: value }));
 
@@ -45,26 +41,25 @@ const IncidentDocumentation = () => {
   const handleSubmit = (e) => {
     e?.preventDefault();
     if (!form?.type || !form?.address) return;
-    const nextNumber = String(incidents?.length + 408)?.padStart(4, '0');
-    const newIncident = {
-      id: `INC-${new Date()?.getFullYear()}-${nextNumber}`,
+    const created = createIncident({
       type: form?.type,
       priority: form?.priority,
       address: form?.address,
-      reportedAt: new Date()?.toISOString(),
-      status: 'active',
       units: form?.units,
       description: form?.description,
       caller: { name: form?.callerName, phone: form?.callerPhone },
-    };
-    setIncidents([newIncident, ...incidents]);
+      historyNote: 'Ticket creado manualmente',
+    }, user);
     setShowForm(false);
-    setSelectedId(newIncident?.id);
-    setForm({ type: '', priority: 'medium', address: '', callerName: '', callerPhone: '', description: '', units: [] });
+    setSelectedId(created?.id);
+    setForm(EMPTY_FORM);
   };
 
-  const closeIncident = (id) => {
-    setIncidents((prev) => prev?.map((i) => (i?.id === id ? { ...i, status: 'closed' } : i)));
+  const toggleSelectedUnit = (unitId) => {
+    const current = selected?.units || [];
+    updateIncident(selected?.id, {
+      units: current?.includes(unitId) ? current?.filter((u) => u !== unitId) : [...current, unitId],
+    });
   };
 
   return (
@@ -76,20 +71,43 @@ const IncidentDocumentation = () => {
 
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
             <div>
-              <h1 className="text-2xl font-bold text-foreground">Documentación de Incidentes</h1>
-              <p className="text-muted-foreground">Registro y seguimiento de los reportes de emergencia</p>
+              <h1 className="text-2xl font-bold text-foreground">Tickets de Emergencia</h1>
+              <p className="text-muted-foreground">Seguimiento del estado de cada emergencia hasta su dictamen final</p>
             </div>
-            <Button iconName={showForm ? 'X' : 'Plus'} variant={showForm ? 'outline' : 'default'} onClick={() => setShowForm(!showForm)}>
-              {showForm ? 'Cancelar' : 'Nuevo Reporte'}
-            </Button>
+            {canCreate && (
+              <Button iconName={showForm ? 'X' : 'Plus'} variant={showForm ? 'outline' : 'default'} onClick={() => setShowForm(!showForm)}>
+                {showForm ? 'Cancelar' : 'Nuevo Ticket'}
+              </Button>
+            )}
+          </div>
+
+          {/* Status summary / filter */}
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`p-3 rounded-lg border text-left ${statusFilter === 'all' ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+            >
+              <div className="text-2xl font-bold text-foreground">{incidents?.length}</div>
+              <div className="text-sm text-muted-foreground">Todos</div>
+            </button>
+            {Object.entries(INCIDENT_STATUS)?.map(([value, info]) => (
+              <button
+                key={value}
+                onClick={() => setStatusFilter(value)}
+                className={`p-3 rounded-lg border text-left ${statusFilter === value ? 'border-primary bg-primary/5' : 'border-border bg-card'}`}
+              >
+                <div className="text-2xl font-bold text-foreground">{incidents?.filter((i) => i?.status === value)?.length}</div>
+                <div className="flex items-center space-x-1 text-sm text-muted-foreground">
+                  <Icon name={info?.icon} size={14} />
+                  <span>{info?.label}</span>
+                </div>
+              </button>
+            ))}
           </div>
 
           {showForm && (
             <form onSubmit={handleSubmit} className="bg-card rounded-lg border border-border p-6 mb-6 space-y-4">
-              <h2 className="text-lg font-semibold text-foreground">Nuevo Reporte de Incidente</h2>
-              {fromCall && (
-                <p className="text-sm text-primary">Datos precargados desde la llamada atendida.</p>
-              )}
+              <h2 className="text-lg font-semibold text-foreground">Nuevo Ticket de Emergencia</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
                   <label className="text-sm font-medium text-foreground">Tipo de emergencia *</label>
@@ -140,7 +158,7 @@ const IncidentDocumentation = () => {
                 <div className="md:col-span-2">
                   <p className="text-sm font-medium text-foreground mb-2">Unidades asignadas</p>
                   <div className="flex flex-wrap gap-2">
-                    {MOCK_UNITS?.map((unit) => (
+                    {units?.map((unit) => (
                       <button
                         type="button"
                         key={unit?.id}
@@ -157,21 +175,20 @@ const IncidentDocumentation = () => {
               </div>
               <div className="flex justify-end">
                 <Button type="submit" iconName="Save" disabled={!form?.type || !form?.address}>
-                  Guardar Reporte
+                  Crear Ticket
                 </Button>
               </div>
             </form>
           )}
 
           <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-            {/* Incident list */}
+            {/* Ticket list */}
             <div className="xl:col-span-2 bg-card rounded-lg border border-border p-6">
               <h2 className="text-lg font-semibold text-foreground mb-4">Historial</h2>
               <div className="space-y-2">
-                {incidents?.map((incident) => {
+                {filtered?.map((incident) => {
                   const type = getEmergencyType(incident?.type);
                   const priority = getPriority(incident?.priority);
-                  const status = INCIDENT_STATUS?.[incident?.status];
                   return (
                     <button
                       key={incident?.id}
@@ -185,36 +202,40 @@ const IncidentDocumentation = () => {
                         <div>
                           <div className="font-medium text-foreground">{incident?.id} · {type?.label}</div>
                           <div className="text-sm text-muted-foreground">{incident?.address}</div>
+                          <div className="text-xs text-muted-foreground">{formatDateTime(incident?.reportedAt)}</div>
                         </div>
                       </div>
                       <div className="flex items-center gap-2 text-xs">
                         <span className={`px-2 py-0.5 rounded-full font-medium ${priority?.className}`}>{priority?.label}</span>
-                        <span className={`px-2 py-0.5 rounded-full font-medium ${status?.className}`}>{status?.label}</span>
+                        <StatusBadge status={incident?.status} />
                       </div>
                     </button>
                   );
                 })}
+                {filtered?.length === 0 && (
+                  <p className="text-center text-muted-foreground py-8">No hay tickets en este estado.</p>
+                )}
               </div>
             </div>
 
-            {/* Incident detail */}
+            {/* Ticket detail */}
             <div className="bg-card rounded-lg border border-border p-6 h-fit">
               {selected ? (
                 <div className="space-y-4">
-                  <div>
-                    <div className="text-sm text-muted-foreground">{selected?.id}</div>
-                    <h2 className="text-lg font-semibold text-foreground">{getEmergencyType(selected?.type)?.label}</h2>
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="text-sm text-muted-foreground">{selected?.id}</div>
+                      <h2 className="text-lg font-semibold text-foreground">{getEmergencyType(selected?.type)?.label}</h2>
+                    </div>
+                    <StatusBadge status={selected?.status} />
                   </div>
+
                   <dl className="space-y-2 text-sm">
                     <div>
                       <dt className="text-muted-foreground">Dirección</dt>
                       <dd className="text-foreground">{selected?.address}</dd>
                     </div>
-                    <div>
-                      <dt className="text-muted-foreground">Reportado</dt>
-                      <dd className="text-foreground">{formatDateTime(selected?.reportedAt)}</dd>
-                    </div>
-                    {selected?.caller?.name && (
+                    {(selected?.caller?.name || selected?.caller?.phone) && (
                       <div>
                         <dt className="text-muted-foreground">Llamante</dt>
                         <dd className="text-foreground">{selected?.caller?.name} {selected?.caller?.phone}</dd>
@@ -222,10 +243,27 @@ const IncidentDocumentation = () => {
                     )}
                     <div>
                       <dt className="text-muted-foreground">Unidades</dt>
-                      <dd className="text-foreground">
-                        {selected?.units?.length
-                          ? selected?.units?.map((id) => MOCK_UNITS?.find((u) => u?.id === id)?.name || id)?.join(', ')
-                          : 'Sin asignar'}
+                      <dd className="flex flex-wrap gap-1 mt-1">
+                        {units?.map((unit) => {
+                          const assigned = selected?.units?.includes(unit?.id);
+                          const editable = hasPermission(user, 'incidents.update') && selected?.status !== 'closed';
+                          if (!assigned && !editable) return null;
+                          return (
+                            <button
+                              key={unit?.id}
+                              disabled={!editable}
+                              onClick={() => toggleSelectedUnit(unit?.id)}
+                              className={`px-2 py-0.5 rounded-full text-xs border ${
+                                assigned ? 'bg-primary text-primary-foreground border-primary' : 'border-border text-muted-foreground'
+                              }`}
+                            >
+                              {unit?.name}
+                            </button>
+                          );
+                        })}
+                        {!selected?.units?.length && !hasPermission(user, 'incidents.update') && (
+                          <span className="text-foreground">Sin asignar</span>
+                        )}
                       </dd>
                     </div>
                     <div>
@@ -233,21 +271,40 @@ const IncidentDocumentation = () => {
                       <dd className="text-foreground whitespace-pre-line">{selected?.description || '—'}</dd>
                     </div>
                   </dl>
-                  <div className="flex gap-2">
-                    {selected?.status !== 'closed' && (
-                      <Button variant="success" size="sm" iconName="CheckCircle" onClick={() => closeIncident(selected?.id)}>
-                        Cerrar incidente
-                      </Button>
-                    )}
-                    <Button variant="outline" size="sm" iconName="Printer" onClick={() => window.print()}>
-                      Imprimir
-                    </Button>
+
+                  {selected?.transcript?.length > 0 && (
+                    <details className="text-sm">
+                      <summary className="cursor-pointer text-primary">Ver transcripción de la llamada</summary>
+                      <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                        {selected?.transcript?.map((t) => (
+                          <p key={t?.id}><span className="font-medium">{t?.speaker}:</span> {t?.message}</p>
+                        ))}
+                      </div>
+                    </details>
+                  )}
+
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground mb-2">Seguimiento</h3>
+                    <IncidentTimeline incident={selected} />
                   </div>
+
+                  <ResolutionSummary resolution={selected?.resolution} />
+
+                  <IncidentActions
+                    incident={selected}
+                    user={user}
+                    onChangeStatus={(id, status, note) => changeStatus(id, status, user, note)}
+                    onFinalize={(id, result, notes) => finalizeIncident(id, result, notes, user)}
+                  />
+
+                  <Button variant="outline" size="sm" iconName="Printer" onClick={() => window.print()}>
+                    Imprimir
+                  </Button>
                 </div>
               ) : (
                 <div className="text-center text-muted-foreground py-12">
                   <Icon name="FileSearch" size={40} className="mx-auto mb-3" />
-                  <p className="text-sm">Seleccione un incidente para ver el detalle.</p>
+                  <p className="text-sm">Seleccione un ticket para ver su estado y seguimiento.</p>
                 </div>
               )}
             </div>

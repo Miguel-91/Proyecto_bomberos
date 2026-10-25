@@ -1,62 +1,79 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/ui/Header';
 import Breadcrumb from '../../components/ui/Breadcrumb';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/AppIcon';
-import { getEmergencyType } from '../../utils/emergencyData';
+import { getEmergencyType, getPriority } from '../../utils/emergencyData';
+import { analyzeTranscript } from '../../utils/callAnalyzer';
+import { getCurrentUser } from '../../utils/auth';
+import { useIncidents } from '../../utils/dataStore';
 
 // Import components
 import CallerInformationForm from './components/CallerInformationForm';
 import EmergencyClassification from './components/EmergencyClassification';
-import GuidedQuestioningPanel from './components/GuidedQuestioningPanel';
+import GuidedQuestioningPanel, { ADDRESS_QUESTION, INJURED_QUESTION, PEOPLE_QUESTION } from './components/GuidedQuestioningPanel';
 import CallTranscriptArea from './components/CallTranscriptArea';
 import QuickActionButtons from './components/QuickActionButtons';
 import LocationMapping from './components/LocationMapping';
-
-// New imports for enhanced call reception module
 import IncomingCallsQueue from './components/IncomingCallsQueue';
 import AIVirtualAssistant from './components/AIVirtualAssistant';
 import CallManagementPanel from './components/CallManagementPanel';
 import EmergencyProtocolGuide from './components/EmergencyProtocolGuide';
+import MicrophoneTranscriber from './components/MicrophoneTranscriber';
+import TicketPanel from './components/TicketPanel';
+
+const EMPTY_CALLER = { name: '', phone: '', address: '', additionalInfo: '', callStatus: 'En línea' };
+
+const EMPTY_CLASSIFICATION = {
+  type: '',
+  priority: '',
+  aiConfidence: 0,
+  aiSuggestion: 'Esperando transcripción',
+  manualOverride: false,
+  estimatedUnits: '-',
+  estimatedTime: '-',
+  riskLevel: '-',
+  resourcesNeeded: 'Estándar'
+};
+
+const DISPATCH_LABELS = {
+  'fire-engine': 'Autobomba',
+  ambulance: 'Ambulancia',
+  rescue: 'Unidad de rescate',
+  'water-tanker': 'Cisterna',
+};
+
+// Agrega o reemplaza una respuesta automática sin pisar lo que escribió el operador
+const upsertAutoResponse = (responses, question, answer) => {
+  const existing = responses?.find((r) => r?.question === question);
+  if (!answer || existing?.source === 'manual') return responses;
+  return [...responses?.filter((r) => r?.question !== question), { question, answer, source: 'auto' }];
+};
 
 const EmergencyCallIntake = () => {
   const navigate = useNavigate();
+  const user = getCurrentUser();
+  const { incidents, createIncident, changeStatus, finalizeIncident } = useIncidents();
+
   const [viewMode, setViewMode] = useState('active-call'); // 'queue', 'active-call', 'ai-assistant'
   const [callStatus, setCallStatus] = useState('active');
   const [callDuration, setCallDuration] = useState(0);
-  const [isRecording, setIsRecording] = useState(true);
-
-  // Enhanced state management
+  const [isListening, setIsListening] = useState(false);
   const [activeCall, setActiveCall] = useState(null);
   const [aiAssistantActive, setAiAssistantActive] = useState(true);
 
-  // State for caller information
-  const [callerInfo, setCallerInfo] = useState({
-    name: '',
-    phone: '',
-    address: '',
-    additionalInfo: '',
-    callStatus: 'En línea'
-  });
-
-  // State for emergency classification
-  const [classification, setClassification] = useState({
-    type: '',
-    priority: '',
-    aiConfidence: 85,
-    aiSuggestion: 'Incendio estructural',
-    manualOverride: false,
-    estimatedUnits: 2,
-    estimatedTime: '8-12',
-    riskLevel: 'Alto',
-    resourcesNeeded: 'Estándar'
-  });
-
-  // State for guided questioning
+  const [callerInfo, setCallerInfo] = useState(EMPTY_CALLER);
+  const [addressIsAuto, setAddressIsAuto] = useState(false);
+  const [classification, setClassification] = useState(EMPTY_CLASSIFICATION);
   const [questionResponses, setQuestionResponses] = useState([]);
   const [transcript, setTranscript] = useState([]);
   const [location, setLocation] = useState(null);
+  const [keyFacts, setKeyFacts] = useState([]);
+  const [ticketId, setTicketId] = useState(null);
+
+  const transcriptRef = useRef([]);
+  const ticket = incidents?.find((i) => i?.id === ticketId);
 
   // Timer for call duration
   useEffect(() => {
@@ -75,61 +92,99 @@ const EmergencyCallIntake = () => {
     return `${mins?.toString()?.padStart(2, '0')}:${secs?.toString()?.padStart(2, '0')}`;
   };
 
+  const addTranscriptEntry = (message, speaker, type) => {
+    const entry = {
+      id: transcriptRef.current.length + 1,
+      timestamp: new Date()?.toLocaleTimeString('es-GT'),
+      speaker,
+      message,
+      type
+    };
+    transcriptRef.current = [...transcriptRef.current, entry];
+    setTranscript(transcriptRef.current);
+  };
+
+  // Llena clasificación, dirección e interrogatorio a partir de lo que se dijo en la llamada
+  const applyAnalysis = (analysis) => {
+    if (!analysis) return;
+
+    setClassification((prev) => (prev?.manualOverride || !analysis?.type ? prev : {
+      ...prev,
+      type: analysis?.type,
+      priority: analysis?.priority,
+      aiConfidence: analysis?.confidence,
+      aiSuggestion: analysis?.typeLabel,
+      estimatedUnits: analysis?.estimatedUnits,
+      estimatedTime: analysis?.estimatedTime,
+      riskLevel: analysis?.riskLevel,
+    }));
+
+    if (analysis?.address) {
+      setCallerInfo((prev) => {
+        if (prev?.address && !addressIsAuto) return prev;
+        return { ...prev, address: analysis?.address };
+      });
+      if (!callerInfo?.address || addressIsAuto) {
+        setAddressIsAuto(true);
+        setLocation({ address: analysis?.address, validated: false });
+      }
+    }
+
+    let injuredAnswer = null;
+    if (analysis?.trapped && analysis?.injured) injuredAnswer = 'Sí, hay personas heridas y atrapadas';
+    else if (analysis?.trapped) injuredAnswer = 'Sí, hay personas atrapadas';
+    else if (analysis?.injured) injuredAnswer = 'Sí, hay personas heridas';
+
+    setQuestionResponses((prev) => {
+      let next = upsertAutoResponse(prev, ADDRESS_QUESTION, analysis?.address);
+      next = upsertAutoResponse(next, INJURED_QUESTION, injuredAnswer);
+      next = upsertAutoResponse(next, PEOPLE_QUESTION, analysis?.people ? String(analysis?.people) : null);
+      return next;
+    });
+
+    setKeyFacts(analysis?.keyFacts || []);
+  };
+
+  const handleFinalTranscript = (text, speaker) => {
+    addTranscriptEntry(text, speaker, speaker === 'Operador' ? 'operator' : 'caller');
+    const fullText = transcriptRef.current?.map((t) => t?.message)?.join('. ');
+    applyAnalysis(analyzeTranscript(fullText));
+  };
+
+  const handleListeningChange = useCallback((listening) => setIsListening(listening), []);
+
   const handleCallerInfoChange = (newInfo) => {
+    if (newInfo?.address !== callerInfo?.address) setAddressIsAuto(false);
     setCallerInfo(newInfo);
   };
 
-  const handleClassificationChange = (newClassification) => {
-    setClassification(newClassification);
-  };
-
-  const handleQuestionResponse = (responses) => {
-    setQuestionResponses(responses);
-  };
-
-  const handleNextQuestion = (response) => {
-    // Add response to transcript
-    const newTranscriptEntry = {
-      id: transcript?.length + 1,
-      timestamp: new Date()?.toLocaleTimeString('es-ES'),
-      speaker: 'Llamante',
-      message: response?.answer,
-      type: 'caller'
-    };
-    setTranscript([...transcript, newTranscriptEntry]);
-  };
-
-  const handleLocationValidate = (locationData) => {
-    setLocation(locationData);
-  };
-
-  const handleLocationUpdate = (newLocation) => {
-    setLocation(newLocation);
-  };
-
-  const handleToggleRecording = () => {
-    setIsRecording(!isRecording);
+  const handleCreateTicket = () => {
+    const responsesText = questionResponses
+      ?.map((r) => `${r?.question} ${r?.answer}`)
+      ?.join('\n');
+    const created = createIncident({
+      type: classification?.type,
+      priority: classification?.priority || 'medium',
+      address: callerInfo?.address,
+      caller: { name: callerInfo?.name, phone: callerInfo?.phone },
+      description: [callerInfo?.additionalInfo, ...keyFacts, responsesText]?.filter(Boolean)?.join('\n'),
+      transcript: transcriptRef.current,
+      historyNote: 'Ticket creado desde llamada',
+    }, user);
+    setTicketId(created?.id);
   };
 
   const handleDispatchResources = (resourceType) => {
-    console.log(`Dispatching ${resourceType}`);
-    // Navigate to resource management or show confirmation
+    if (ticket?.status === 'open') {
+      changeStatus(ticket?.id, 'in-progress', user, `Despachada: ${DISPATCH_LABELS?.[resourceType] || resourceType}`);
+    }
   };
 
   const handleTransferCall = (transferData) => {
-    console.log('Transferring call:', transferData);
-    // Implement call transfer logic
-  };
-
-  const handleHoldCall = (isHold) => {
-    console.log('Call hold status:', isHold);
-    // Implement call hold logic
+    addTranscriptEntry(`Llamada transferida a ${transferData?.target}`, 'Sistema', 'operator');
   };
 
   const handleEmergencyDetected = (analysis) => {
-    console.log('AI detected emergency:', analysis);
-    
-    // Update classification based on AI analysis
     setClassification({
       ...classification,
       type: analysis?.emergencyType,
@@ -142,79 +197,73 @@ const EmergencyCallIntake = () => {
   };
 
   const handleAIQuestionGenerated = (question) => {
-    // Add AI question to transcript
-    const aiQuestion = {
-      id: transcript?.length + 1,
-      timestamp: new Date()?.toLocaleTimeString('es-ES'),
-      speaker: 'IA Asistente',
-      message: question,
-      type: 'ai'
-    };
-    setTranscript([...transcript, aiQuestion]);
+    addTranscriptEntry(question, 'IA Asistente', 'ai');
+  };
+
+  const resetCall = () => {
+    transcriptRef.current = [];
+    setTranscript([]);
+    setCallerInfo(EMPTY_CALLER);
+    setAddressIsAuto(false);
+    setClassification(EMPTY_CLASSIFICATION);
+    setQuestionResponses([]);
+    setLocation(null);
+    setKeyFacts([]);
+    setTicketId(null);
+    setCallDuration(0);
+    setCallStatus('active');
   };
 
   const handleAcceptIncomingCall = (call) => {
+    resetCall();
     setActiveCall(call);
     setViewMode('active-call');
-    setCallStatus('active');
-    setCallDuration(0);
-    setIsRecording(true);
-
-    // Initialize caller info with incoming call data
-    setCallerInfo({
-      name: '',
-      phone: call?.callerNumber,
-      address: call?.location,
-      additionalInfo: '',
-      callStatus: 'En línea'
-    });
-
-    // Set AI prediction as initial classification
+    setCallerInfo({ ...EMPTY_CALLER, phone: call?.callerNumber, address: call?.location });
     if (call?.aiPrediction) {
       setClassification({
-        type: call?.aiPrediction?.type?.toLowerCase(),
-        priority: call?.aiPrediction?.urgencyLevel?.toLowerCase(),
+        ...EMPTY_CLASSIFICATION,
+        type: call?.aiPrediction?.type,
+        priority: call?.aiPrediction?.urgencyLevel,
         aiConfidence: call?.aiPrediction?.confidence,
         aiSuggestion: getEmergencyType(call?.aiPrediction?.type)?.label,
-        manualOverride: false,
-        estimatedUnits: 2,
-        estimatedTime: '8-12',
-        riskLevel: 'Alto',
-        resourcesNeeded: 'Estándar'
       });
     }
   };
 
-  const handleRejectIncomingCall = (call) => {
-    console.log('Call rejected:', call);
-    // Could implement call logging or transfer to voicemail
-  };
-
   const handleCompleteCall = () => {
     setCallStatus('completed');
-    setIsRecording(false);
-    // Show completion confirmation or navigate
   };
 
   const handleEndCall = () => {
     if (window.confirm('¿Está seguro de que desea finalizar la llamada?')) {
       setCallStatus('ended');
-      setIsRecording(false);
       navigate('/emergency-dashboard');
     }
   };
 
-  const handleCreateIncident = () => {
-    // Navigate to incident documentation with current data
-    navigate('/incident-documentation', {
-      state: {
-        callerInfo,
-        classification,
-        responses: questionResponses,
-        location
-      }
-    });
-  };
+  const missingFields = [
+    !classification?.type && 'tipo de emergencia',
+    !callerInfo?.address?.trim() && 'dirección',
+  ]?.filter(Boolean);
+
+  const ticketPanel = (
+    <TicketPanel
+      ticket={ticket}
+      canCreate={missingFields?.length === 0}
+      missingFields={missingFields}
+      onCreate={handleCreateTicket}
+      user={user}
+      onChangeStatus={(id, status, note) => changeStatus(id, status, user, note)}
+      onFinalize={(id, result, notes) => finalizeIncident(id, result, notes, user)}
+    />
+  );
+
+  const microphone = (
+    <MicrophoneTranscriber
+      onFinalTranscript={handleFinalTranscript}
+      onListeningChange={handleListeningChange}
+    />
+  );
 
   const renderViewContent = () => {
     switch (viewMode) {
@@ -223,51 +272,8 @@ const EmergencyCallIntake = () => {
           <div className="space-y-6">
             <IncomingCallsQueue
               onAcceptCall={handleAcceptIncomingCall}
-              onRejectCall={handleRejectIncomingCall}
+              onRejectCall={() => {}}
             />
-            
-            {/* Dashboard Statistics */}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-card rounded-lg border border-border p-4">
-                <div className="flex items-center space-x-2">
-                  <Icon name="Phone" className="text-blue-500" size={20} />
-                  <div>
-                    <div className="text-2xl font-bold text-foreground">3</div>
-                    <div className="text-sm text-muted-foreground">En Espera</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-card rounded-lg border border-border p-4">
-                <div className="flex items-center space-x-2">
-                  <Icon name="CheckCircle" className="text-green-500" size={20} />
-                  <div>
-                    <div className="text-2xl font-bold text-foreground">12</div>
-                    <div className="text-sm text-muted-foreground">Atendidas Hoy</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-card rounded-lg border border-border p-4">
-                <div className="flex items-center space-x-2">
-                  <Icon name="Clock" className="text-yellow-500" size={20} />
-                  <div>
-                    <div className="text-2xl font-bold text-foreground">2:30</div>
-                    <div className="text-sm text-muted-foreground">Tiempo Promedio</div>
-                  </div>
-                </div>
-              </div>
-              
-              <div className="bg-card rounded-lg border border-border p-4">
-                <div className="flex items-center space-x-2">
-                  <Icon name="TrendingUp" className="text-primary" size={20} />
-                  <div>
-                    <div className="text-2xl font-bold text-foreground">94%</div>
-                    <div className="text-sm text-muted-foreground">Eficiencia IA</div>
-                  </div>
-                </div>
-              </div>
-            </div>
           </div>
         );
 
@@ -280,19 +286,15 @@ const EmergencyCallIntake = () => {
               onQuestionGenerated={handleAIQuestionGenerated}
               isActive={aiAssistantActive}
             />
-            
+
             <div className="space-y-6">
               <EmergencyProtocolGuide
                 emergencyType={classification?.type}
                 currentStep={0}
-                onStepComplete={(step) => console.log('Protocol step completed:', step)}
+                onStepComplete={() => {}}
               />
-              
-              <CallTranscriptArea
-                transcript={transcript}
-                isRecording={isRecording}
-                onToggleRecording={handleToggleRecording}
-              />
+
+              <CallTranscriptArea transcript={transcript} isRecording={isListening} />
             </div>
           </div>
         );
@@ -306,84 +308,80 @@ const EmergencyCallIntake = () => {
               <CallerInformationForm
                 callerInfo={callerInfo}
                 onCallerInfoChange={handleCallerInfoChange}
-                onLocationValidate={handleLocationValidate}
+                onLocationValidate={setLocation}
               />
 
               <EmergencyClassification
                 classification={classification}
-                onClassificationChange={handleClassificationChange}
+                onClassificationChange={setClassification}
               />
+
+              {keyFacts?.length > 0 && (
+                <div className="bg-primary/5 border border-primary/20 rounded-lg p-4">
+                  <div className="flex items-center space-x-2 text-sm font-medium text-primary mb-2">
+                    <Icon name="Sparkles" size={16} />
+                    <span>Datos detectados en la llamada</span>
+                  </div>
+                  <ul className="list-disc list-inside text-sm text-foreground">
+                    {keyFacts?.map((fact) => <li key={fact}>{fact}</li>)}
+                  </ul>
+                </div>
+              )}
 
               <GuidedQuestioningPanel
                 emergencyType={classification?.type}
                 responses={questionResponses}
-                onResponseChange={handleQuestionResponse}
-                onNextQuestion={handleNextQuestion}
+                onResponseChange={setQuestionResponses}
               />
 
               <LocationMapping
                 location={location}
-                onLocationUpdate={handleLocationUpdate}
+                onLocationUpdate={setLocation}
                 nearbyUnits={[]}
               />
             </div>
 
-            {/* Right Column - Transcript, AI Assistant, and Management */}
+            {/* Right Column - Microphone, transcript, ticket and management */}
             <div className="space-y-6">
-              <CallTranscriptArea
-                transcript={transcript}
-                isRecording={isRecording}
-                onToggleRecording={handleToggleRecording}
-              />
+              {microphone}
 
-              <CallManagementPanel
-                onTransferCall={handleTransferCall}
-                onHoldCall={handleHoldCall}
-                onMergeCall={(callData) => console.log('Merging call:', callData)}
-                onCreateConference={(participants) => console.log('Creating conference:', participants)}
-                callData={activeCall}
-              />
+              <CallTranscriptArea transcript={transcript} isRecording={isListening} />
+
+              {ticketPanel}
 
               <QuickActionButtons
                 onDispatchResources={handleDispatchResources}
                 onTransferCall={handleTransferCall}
-                onCreateIncident={handleCreateIncident}
+                onCreateIncident={ticket || missingFields?.length ? null : handleCreateTicket}
               />
 
-              {/* Call Statistics - enhanced */}
+              <CallManagementPanel
+                onTransferCall={handleTransferCall}
+                onHoldCall={() => {}}
+                onMergeCall={() => {}}
+                onCreateConference={() => {}}
+                callData={activeCall}
+              />
+
+              {/* Call Statistics */}
               <div className="bg-card rounded-lg border border-border p-4">
                 <h4 className="text-sm font-medium text-foreground mb-3">Estadísticas de Llamada</h4>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Tiempo de respuesta:</span>
-                    <span className="text-foreground">12 segundos</span>
+                    <span className="text-muted-foreground">Frases transcritas:</span>
+                    <span className="text-foreground">{transcript?.length}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Preguntas realizadas:</span>
+                    <span className="text-muted-foreground">Preguntas respondidas:</span>
                     <span className="text-foreground">{questionResponses?.length}</span>
                   </div>
                   <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Confianza IA:</span>
+                    <span className="text-muted-foreground">Confianza de clasificación:</span>
                     <span className="text-foreground">{classification?.aiConfidence}%</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Prioridad asignada:</span>
-                    <span className={`font-medium ${
-                      classification?.priority === 'critical' ? 'text-destructive' :
-                      classification?.priority === 'high' ? 'text-warning' :
-                      classification?.priority === 'medium' ? 'text-primary' : 'text-success'
-                    }`}>
-                      {classification?.priority === 'critical' ? 'Crítica' :
-                       classification?.priority === 'high' ? 'Alta' :
-                       classification?.priority === 'medium' ? 'Media' : 'Baja'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between text-sm">
-                    <span className="text-muted-foreground">Estado IA:</span>
-                    <div className="flex items-center space-x-1">
-                      <div className={`w-2 h-2 rounded-full ${aiAssistantActive ? 'bg-success animate-pulse' : 'bg-muted'}`}></div>
-                      <span className="text-foreground">{aiAssistantActive ? 'Activo' : 'Inactivo'}</span>
-                    </div>
+                    <span className="font-medium text-foreground">{getPriority(classification?.priority)?.label}</span>
                   </div>
                 </div>
               </div>
@@ -393,128 +391,92 @@ const EmergencyCallIntake = () => {
     }
   };
 
+  const tabClass = (mode) => `px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center space-x-2 ${
+    viewMode === mode ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+  }`;
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
       <main className="pt-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <Breadcrumb />
-          
-          {/* Enhanced Navigation Tabs */}
+
+          {/* Navigation Tabs */}
           <div className="bg-card rounded-lg border border-border p-2 mb-6">
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setViewMode('queue')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center space-x-2 ${
-                  viewMode === 'queue' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setViewMode('queue')} className={tabClass('queue')}>
                 <Icon name="ListOrdered" size={16} />
                 <span>Cola de Llamadas</span>
               </button>
-              
-              <button
-                onClick={() => setViewMode('active-call')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center space-x-2 ${
-                  viewMode === 'active-call' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
+              <button onClick={() => setViewMode('active-call')} className={tabClass('active-call')}>
                 <Icon name="Phone" size={16} />
                 <span>Llamada Activa</span>
               </button>
-              
-              <button
-                onClick={() => setViewMode('ai-assistant')}
-                className={`px-4 py-2 rounded-md text-sm font-medium transition-colors flex items-center space-x-2 ${
-                  viewMode === 'ai-assistant' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                }`}
-              >
+              <button onClick={() => setViewMode('ai-assistant')} className={tabClass('ai-assistant')}>
                 <Icon name="Bot" size={16} />
                 <span>Asistente IA</span>
               </button>
             </div>
           </div>
 
-          {/* Call Status Header - Enhanced */}
-          {callStatus !== 'idle' && (
-            <div className="bg-card rounded-lg border border-border p-4 mb-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="flex items-center space-x-2">
-                    <div className={`w-3 h-3 rounded-full ${
-                      callStatus === 'active' ? 'bg-success animate-pulse' : 
-                      callStatus === 'completed' ? 'bg-warning' : 'bg-muted-foreground'
-                    }`}></div>
-                    <span className="font-medium text-foreground">
-                      {callStatus === 'active' ? 'Llamada Activa' : 
-                       callStatus === 'completed' ? 'Llamada Completada' : 'Llamada Finalizada'}
-                    </span>
-                  </div>
-                  <div className="flex items-center space-x-2 text-muted-foreground">
-                    <Icon name="Clock" size={16} />
-                    <span className="text-sm">Duración: {formatDuration(callDuration)}</span>
-                  </div>
-                  <div className="flex items-center space-x-2 text-muted-foreground">
-                    <Icon name="Calendar" size={16} />
-                    <span className="text-sm">
-                      {new Date()?.toLocaleDateString('es-ES', { 
-                        day: '2-digit', 
-                        month: '2-digit', 
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
-                    </span>
-                  </div>
-                  {activeCall && (
-                    <div className="flex items-center space-x-2 text-muted-foreground">
-                      <Icon name="User" size={16} />
-                      <span className="text-sm">{activeCall?.callerNumber}</span>
-                    </div>
-                  )}
-                </div>
-                
+          {/* Call Status Header */}
+          <div className="bg-card rounded-lg border border-border p-4 mb-6">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4">
                 <div className="flex items-center space-x-2">
-                  <Button
-                    variant={aiAssistantActive ? "default" : "outline"}
-                    size="sm"
-                    onClick={() => setAiAssistantActive(!aiAssistantActive)}
-                    iconName="Bot"
-                  >
-                    IA {aiAssistantActive ? 'ON' : 'OFF'}
-                  </Button>
-                  
-                  {callStatus === 'active' && (
-                    <>
-                      <Button
-                        variant="success"
-                        onClick={handleCompleteCall}
-                        iconName="Check"
-                      >
-                        Completar Llamada
-                      </Button>
-                      <Button
-                        variant="destructive"
-                        onClick={handleEndCall}
-                        iconName="PhoneOff"
-                      >
-                        Finalizar
-                      </Button>
-                    </>
-                  )}
-                  {callStatus === 'completed' && (
-                    <Button
-                      variant="default"
-                      onClick={() => navigate('/emergency-dashboard')}
-                      iconName="ArrowLeft"
-                    >
-                      Volver al Dashboard
-                    </Button>
-                  )}
+                  <div className={`w-3 h-3 rounded-full ${
+                    callStatus === 'active' ? 'bg-success animate-pulse' :
+                    callStatus === 'completed' ? 'bg-warning' : 'bg-muted-foreground'
+                  }`}></div>
+                  <span className="font-medium text-foreground">
+                    {callStatus === 'active' ? 'Llamada Activa' :
+                     callStatus === 'completed' ? 'Llamada Completada' : 'Llamada Finalizada'}
+                  </span>
                 </div>
+                <div className="flex items-center space-x-2 text-muted-foreground">
+                  <Icon name="Clock" size={16} />
+                  <span className="text-sm">Duración: {formatDuration(callDuration)}</span>
+                </div>
+                {isListening && (
+                  <div className="flex items-center space-x-2 text-destructive">
+                    <Icon name="Mic" size={16} />
+                    <span className="text-sm">Transcribiendo</span>
+                  </div>
+                )}
+                {ticket && (
+                  <div className="flex items-center space-x-2 text-muted-foreground">
+                    <Icon name="Ticket" size={16} />
+                    <span className="text-sm">{ticket?.id}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  variant={aiAssistantActive ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => setAiAssistantActive(!aiAssistantActive)}
+                  iconName="Bot"
+                >
+                  IA {aiAssistantActive ? 'ON' : 'OFF'}
+                </Button>
+                <Button variant="outline" size="sm" onClick={resetCall} iconName="RotateCcw">
+                  Nueva llamada
+                </Button>
+                {callStatus === 'active' && (
+                  <>
+                    <Button variant="success" size="sm" onClick={handleCompleteCall} iconName="Check">
+                      Completar Llamada
+                    </Button>
+                    <Button variant="destructive" size="sm" onClick={handleEndCall} iconName="PhoneOff">
+                      Finalizar
+                    </Button>
+                  </>
+                )}
               </div>
             </div>
-          )}
+          </div>
 
           {/* Dynamic Content Based on View Mode */}
           {renderViewContent()}

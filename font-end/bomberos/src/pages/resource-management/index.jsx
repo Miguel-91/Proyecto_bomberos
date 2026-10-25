@@ -2,7 +2,9 @@ import React, { useState } from 'react';
 import Header from '../../components/ui/Header';
 import Breadcrumb from '../../components/ui/Breadcrumb';
 import Icon from '../../components/AppIcon';
-import { MOCK_UNITS, MOCK_EQUIPMENT, UNIT_STATUS } from '../../utils/emergencyData';
+import { MOCK_EQUIPMENT, UNIT_STATUS } from '../../utils/emergencyData';
+import { getCurrentUser, hasPermission } from '../../utils/auth';
+import { useUnits } from '../../utils/dataStore';
 
 const UNIT_ICONS = {
   Autobomba: 'Flame',
@@ -12,7 +14,8 @@ const UNIT_ICONS = {
 };
 
 const ResourceManagement = () => {
-  const [units, setUnits] = useState(MOCK_UNITS);
+  const canManage = hasPermission(getCurrentUser(), 'resources.manage');
+  const [units, setUnits] = useUnits();
   const [statusFilter, setStatusFilter] = useState('all');
 
   const filteredUnits = units?.filter((u) => statusFilter === 'all' || u?.status === statusFilter);
@@ -91,15 +94,17 @@ const ResourceManagement = () => {
                   </div>
                 </div>
 
-                <select
-                  className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
-                  value={unit?.status}
-                  onChange={(e) => updateUnitStatus(unit?.id, e?.target?.value)}
-                >
-                  {Object.entries(UNIT_STATUS)?.map(([value, s]) => (
-                    <option key={value} value={value}>{s?.label}</option>
-                  ))}
-                </select>
+                {canManage && (
+                  <select
+                    className="w-full h-9 rounded-md border border-input bg-background px-2 text-sm"
+                    value={unit?.status}
+                    onChange={(e) => updateUnitStatus(unit?.id, e?.target?.value)}
+                  >
+                    {Object.entries(UNIT_STATUS)?.map(([value, s]) => (
+                      <option key={value} value={value}>{s?.label}</option>
+                    ))}
+                  </select>
+                )}
               </div>
             ))}
           </div>

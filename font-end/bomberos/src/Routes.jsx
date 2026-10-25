@@ -9,11 +9,15 @@ import PersonnelScheduling from './pages/personnel-scheduling';
 import ResourceManagement from './pages/resource-management';
 import IncidentDocumentation from './pages/incident-documentation';
 import EmergencyDashboard from './pages/emergency-dashboard';
+import SystemSettings from './pages/system-settings';
+import { getCurrentUser, hasPermission } from './utils/auth';
 
-// Redirige al login si no hay una sesión guardada
-const ProtectedRoute = ({ children }) => {
-  const user = localStorage.getItem('emergencyUser');
-  return user ? children : <Navigate to="/login" replace />;
+// Redirige al login si no hay sesión, y al dashboard si el rol no tiene permiso
+const ProtectedRoute = ({ permission, children }) => {
+  const user = getCurrentUser();
+  if (!user) return <Navigate to="/login" replace />;
+  if (!hasPermission(user, permission)) return <Navigate to="/emergency-dashboard" replace />;
+  return children;
 };
 
 const Routes = () => {
@@ -24,11 +28,12 @@ const Routes = () => {
       <RouterRoutes>
         <Route path="/" element={<Navigate to="/emergency-dashboard" replace />} />
         <Route path="/login" element={<Login />} />
-        <Route path="/emergency-dashboard" element={<ProtectedRoute><EmergencyDashboard /></ProtectedRoute>} />
-        <Route path="/emergency-call-intake" element={<ProtectedRoute><EmergencyCallIntake /></ProtectedRoute>} />
-        <Route path="/personnel-scheduling" element={<ProtectedRoute><PersonnelScheduling /></ProtectedRoute>} />
-        <Route path="/resource-management" element={<ProtectedRoute><ResourceManagement /></ProtectedRoute>} />
-        <Route path="/incident-documentation" element={<ProtectedRoute><IncidentDocumentation /></ProtectedRoute>} />
+        <Route path="/emergency-dashboard" element={<ProtectedRoute permission="dashboard.view"><EmergencyDashboard /></ProtectedRoute>} />
+        <Route path="/emergency-call-intake" element={<ProtectedRoute permission="emergencies.manage"><EmergencyCallIntake /></ProtectedRoute>} />
+        <Route path="/personnel-scheduling" element={<ProtectedRoute permission="personnel.view"><PersonnelScheduling /></ProtectedRoute>} />
+        <Route path="/resource-management" element={<ProtectedRoute permission="resources.view"><ResourceManagement /></ProtectedRoute>} />
+        <Route path="/incident-documentation" element={<ProtectedRoute permission="incidents.view"><IncidentDocumentation /></ProtectedRoute>} />
+        <Route path="/system-settings" element={<ProtectedRoute permission="settings.manage"><SystemSettings /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </RouterRoutes>
       </ErrorBoundary>

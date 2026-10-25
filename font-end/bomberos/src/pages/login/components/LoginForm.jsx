@@ -4,6 +4,7 @@ import Button from '../../../components/ui/Button';
 import Input from '../../../components/ui/Input';
 import { Checkbox } from '../../../components/ui/Checkbox';
 import Icon from '../../../components/AppIcon';
+import { authenticate } from '../../../utils/auth';
 
 const LoginForm = () => {
   const navigate = useNavigate();
@@ -16,14 +17,6 @@ const LoginForm = () => {
   const [errors, setErrors] = useState({});
   const [isLoading, setIsLoading] = useState(false);
   const [loginAttempts, setLoginAttempts] = useState(0);
-
-  // Mock credentials for different user types
-  const mockCredentials = [
-    { username: 'dispatcher01', password: 'Emergency2024!', role: 'dispatcher', name: 'Juan Pérez' },
-    { username: 'chief.rodriguez', password: 'FireChief2024!', role: 'chief', name: 'María Rodríguez' },
-    { username: 'volunteer.garcia', password: 'Volunteer2024!', role: 'volunteer', name: 'Carlos García' },
-    { username: 'admin.system', password: 'Admin2024!', role: 'admin', name: 'Sistema Admin' }
-  ];
 
   const handleInputChange = (e) => {
     const { name, value, type, checked } = e?.target;
@@ -67,12 +60,10 @@ const LoginForm = () => {
 
     try {
       // Simulate API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      await new Promise(resolve => setTimeout(resolve, 600));
 
       // Check credentials
-      const user = mockCredentials?.find(
-        cred => cred?.username === formData?.username && cred?.password === formData?.password
-      );
+      const user = authenticate(formData?.username, formData?.password);
 
       if (user) {
         // Store user session
@@ -80,6 +71,7 @@ const LoginForm = () => {
           username: user?.username,
           role: user?.role,
           name: user?.name,
+          personnelId: user?.personnelId,
           loginTime: new Date()?.toISOString(),
           rememberMe: formData?.rememberMe
         }));

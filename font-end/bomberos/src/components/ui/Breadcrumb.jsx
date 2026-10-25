@@ -9,7 +9,8 @@ const Breadcrumb = () => {
     '/emergency-dashboard': 'Dashboard',
     '/emergency-call-intake': 'Emergencias',
     '/resource-management': 'Recursos',
-    '/incident-documentation': 'Documentación',
+    '/incident-documentation': 'Tickets',
+    '/system-settings': 'Configuración',
     '/personnel-scheduling': 'Personal',
     '/login': 'Iniciar Sesión'
   };
