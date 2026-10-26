@@ -15,6 +15,16 @@ const getConnectionType = (label = '') => {
 
 const AUTO_KEY = 'emergencyMicAutoActivate';
 
+// Mensajes claros para cada error del reconocimiento de voz
+const SPEECH_ERRORS = {
+  'not-allowed': 'Permiso de micrófono denegado. Haga clic en el candado de la barra de direcciones, active "Micrófono" y recargue la página.',
+  'service-not-allowed': 'El navegador o el perfil bloquea la transcripción de voz. Si usa un perfil administrado (por ejemplo "Centro educativo"), pruebe con un perfil personal de Chrome o con Microsoft Edge.',
+  'audio-capture': 'No se detecta ningún micrófono. Conéctelo o revíselo en Windows: Configuración → Sistema → Sonido → Entrada.',
+  network: 'La transcripción necesita conexión a internet (Chrome envía el audio al servicio de voz de Google).',
+};
+const FATAL_ERRORS = ['not-allowed', 'service-not-allowed', 'audio-capture', 'network'];
+const LANGS = ['es-GT', 'es-MX', 'es-ES'];
+
 const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
   const [devices, setDevices] = useState([]);
   const [selectedId, setSelectedId] = useState('');
@@ -25,7 +35,13 @@ const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
   const [level, setLevel] = useState(0);
   const [notice, setNotice] = useState(null);
   const [error, setError] = useState(null);
-  const [autoActivate, setAutoActivate] = useState(() => localStorage.getItem(AUTO_KEY) !== 'false');
+  const [autoActivate, setAutoActivate] = useState(() => {
+    try { return localStorage.getItem(AUTO_KEY) !== 'false'; } catch { return true; }
+  });
+  const [manualText, setManualText] = useState('');
+  const [noResultHint, setNoResultHint] = useState(false);
+  const langIndexRef = useRef(0);
+  const lastResultRef = useRef(0);
 
   const recognitionRef = useRef(null);
   const listeningRef = useRef(false);
@@ -34,9 +50,11 @@ const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
   const audioRef = useRef({ stream: null, context: null, frame: null });
 
   const onFinalRef = useRef(onFinalTranscript);
+  const onListeningChangeRef = useRef(onListeningChange);
 
   speakerRef.current = speaker;
   onFinalRef.current = onFinalTranscript;
+  onListeningChangeRef.current = onListeningChange;
 
   const stopLevelMeter = () => {
     const { stream, context, frame } = audioRef.current;
@@ -91,11 +109,13 @@ const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
 
     if (!recognitionRef.current) {
       const recognition = new SpeechRecognitionApi();
-      recognition.lang = 'es-GT';
+      recognition.lang = LANGS[langIndexRef.current];
       recognition.continuous = true;
       recognition.interimResults = true;
       recognition.onresult = (event) => {
         let interim = '';
+        lastResultRef.current = Date.now();
+        setNoResultHint(false);
         for (let i = event.resultIndex; i < event.results.length; i++) {
           const result = event.results[i];
           if (result.isFinal) {
@@ -108,19 +128,37 @@ const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
         setInterimText(interim);
       };
       recognition.onerror = (event) => {
-        if (event.error === 'not-allowed') setError('Permiso de micrófono denegado.');
-        else if (event.error === 'network') setError('La transcripción necesita conexión a internet.');
+        if (event.error === 'no-speech' || event.error === 'aborted') return; // silencio: se reinicia solo
+        if (event.error === 'language-not-supported' && langIndexRef.current < LANGS.length - 1) {
+          langIndexRef.current += 1;
+          recognition.lang = LANGS[langIndexRef.current];
+          return; // onend lo reinicia con el siguiente idioma
+        }
+        setError(SPEECH_ERRORS[event.error] || `Error de transcripción: ${event.error}`);
+        if (FATAL_ERRORS.includes(event.error)) {
+          // Detener para no quedar reintentando sin fin
+          listeningRef.current = false;
+          stopLevelMeter();
+          setIsListening(false);
+          setInterimText('');
+          onListeningChangeRef.current?.(false);
+        }
       };
       // Chrome detiene el reconocimiento tras un silencio; se reinicia mientras siga activo
       recognition.onend = () => {
         if (listeningRef.current) {
-          try { recognition.start(); } catch { /* ya iniciado */ }
+          setTimeout(() => {
+            if (!listeningRef.current) return;
+            try { recognition.start(); } catch { /* ya iniciado */ }
+          }, 250);
         }
       };
       recognitionRef.current = recognition;
     }
 
     listeningRef.current = true;
+    lastResultRef.current = Date.now();
+    setNoResultHint(false);
     try { recognitionRef.current.start(); } catch { /* ya iniciado */ }
     setIsListening(true);
     onListeningChange?.(true);
@@ -177,10 +215,27 @@ const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
     return () => mediaDevices.removeEventListener('devicechange', handleDeviceChange);
   }, [autoActivate, refreshDevices, startListening]);
 
+  // Si se escucha sonido pero no llega texto, avisar sobre el micrófono predeterminado de Windows
+  useEffect(() => {
+    if (!isListening) return undefined;
+    const timer = setInterval(() => {
+      if (Date.now() - lastResultRef.current > 10000) setNoResultHint(true);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [isListening]);
+
   const toggleAutoActivate = () => {
     const next = !autoActivate;
     setAutoActivate(next);
-    localStorage.setItem(AUTO_KEY, String(next));
+    try { localStorage.setItem(AUTO_KEY, String(next)); } catch { /* sin almacenamiento */ }
+  };
+
+  const handleManualSubmit = (e) => {
+    e?.preventDefault();
+    const text = manualText.trim();
+    if (!text) return;
+    onFinalRef.current?.(text, speakerRef.current);
+    setManualText('');
   };
 
   const handleDeviceSelect = (deviceId) => {
@@ -277,8 +332,39 @@ const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
           {interimText && (
             <p className="text-sm italic text-muted-foreground border-l-2 border-primary pl-2">{interimText}…</p>
           )}
+
+          {selectedId && selectedId !== 'default' && (
+            <p className="text-[11px] text-muted-foreground">
+              Nota: la transcripción de Chrome/Edge usa el <strong>micrófono predeterminado de Windows</strong>.
+              Si no transcribe, ponga este dispositivo como predeterminado en Windows (Configuración → Sistema → Sonido → Entrada).
+            </p>
+          )}
+
+          {isListening && noResultHint && (
+            <div className="flex items-start space-x-2 text-xs text-warning bg-warning/10 rounded p-2">
+              <Icon name="AlertTriangle" size={14} />
+              <span>
+                No se ha recibido texto en los últimos segundos. Hable más cerca del micrófono, revise que sea el
+                micrófono predeterminado de Windows y que haya conexión a internet.
+              </span>
+            </div>
+          )}
         </div>
       )}
+
+      {/* Respaldo: escribir lo que dice el llamante (también sirve para probar el auto-llenado) */}
+      <form onSubmit={handleManualSubmit} className="mt-3 flex items-center space-x-2">
+        <input
+          type="text"
+          value={manualText}
+          onChange={(e) => setManualText(e?.target?.value)}
+          placeholder="O escriba lo que dice el llamante y presione Enter"
+          className="flex-1 h-9 rounded-md border border-input bg-background px-2 text-sm"
+        />
+        <Button type="submit" variant="outline" size="sm" disabled={!manualText.trim()}>
+          Agregar
+        </Button>
+      </form>
 
       {notice && (
         <div className="mt-3 flex items-start space-x-2 text-xs text-primary">

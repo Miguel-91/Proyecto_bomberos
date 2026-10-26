@@ -73,6 +73,8 @@ const EmergencyCallIntake = () => {
   const [ticketId, setTicketId] = useState(null);
 
   const transcriptRef = useRef([]);
+  // Campos que llenó la voz automáticamente (se pueden seguir actualizando)
+  const autoFieldsRef = useRef(new Set());
   const ticket = incidents?.find((i) => i?.id === ticketId);
 
   // Timer for call duration
@@ -119,14 +121,26 @@ const EmergencyCallIntake = () => {
       riskLevel: analysis?.riskLevel,
     }));
 
-    if (analysis?.address) {
-      setCallerInfo((prev) => {
-        if (prev?.address && !addressIsAuto) return prev;
-        return { ...prev, address: analysis?.address };
-      });
-      if (!callerInfo?.address || addressIsAuto) {
+    // Nombre, teléfono, dirección e información adicional: se llenan si están vacíos
+    // o si los llenó la voz antes (no se reemplaza lo que escribió el operador)
+    const autoValues = {
+      name: analysis?.name,
+      phone: analysis?.phone,
+      address: analysis?.address,
+      additionalInfo: analysis?.summary,
+    };
+    const filled = {};
+    Object.entries(autoValues).forEach(([field, value]) => {
+      if (!value) return;
+      const current = callerInfo?.[field];
+      if (!current?.trim() || autoFieldsRef.current.has(field)) filled[field] = value;
+    });
+    if (Object.keys(filled).length) {
+      Object.keys(filled).forEach((f) => autoFieldsRef.current.add(f));
+      setCallerInfo((prev) => ({ ...prev, ...filled }));
+      if (filled.address) {
         setAddressIsAuto(true);
-        setLocation({ address: analysis?.address, validated: false });
+        setLocation({ address: filled.address, validated: false });
       }
     }
 
@@ -147,13 +161,20 @@ const EmergencyCallIntake = () => {
 
   const handleFinalTranscript = (text, speaker) => {
     addTranscriptEntry(text, speaker, speaker === 'Operador' ? 'operator' : 'caller');
-    const fullText = transcriptRef.current?.map((t) => t?.message)?.join('. ');
+    // Se analiza lo que dijo el llamante (si no hay, todo lo transcrito)
+    const callerLines = transcriptRef.current?.filter((t) => t?.type === 'caller');
+    const source = callerLines?.length ? callerLines : transcriptRef.current;
+    const fullText = source?.map((t) => t?.message)?.join('. ');
     applyAnalysis(analyzeTranscript(fullText));
   };
 
   const handleListeningChange = useCallback((listening) => setIsListening(listening), []);
 
   const handleCallerInfoChange = (newInfo) => {
+    // Si el operador edita un campo a mano, la voz ya no lo reemplaza
+    ['name', 'phone', 'address', 'additionalInfo'].forEach((field) => {
+      if (newInfo?.[field] !== callerInfo?.[field]) autoFieldsRef.current.delete(field);
+    });
     if (newInfo?.address !== callerInfo?.address) setAddressIsAuto(false);
     setCallerInfo(newInfo);
   };
@@ -202,6 +223,7 @@ const EmergencyCallIntake = () => {
 
   const resetCall = () => {
     transcriptRef.current = [];
+    autoFieldsRef.current = new Set();
     setTranscript([]);
     setCallerInfo(EMPTY_CALLER);
     setAddressIsAuto(false);
