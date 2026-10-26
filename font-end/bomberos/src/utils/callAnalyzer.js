@@ -211,3 +211,84 @@ export const analyzeTranscript = (text) => {
     riskLevel: priority === 'critical' ? 'Muy alto' : priority === 'high' ? 'Alto' : priority === 'medium' ? 'Moderado' : 'Bajo',
   };
 };
+
+// ---------------------------------------------------------------------------
+// Estado emocional del llamante (¿la llamada está alterada?)
+// Se combina lo que dice (palabras de angustia, repeticiones, frases cortas)
+// con el volumen de la voz medido por el micrófono (0-100).
+// ---------------------------------------------------------------------------
+const DISTRESS_STRONG = [
+  'auxilio', 'socorro', 'se va a morir', 'se esta muriendo', 'se muere', 'me muero', 'me estoy muriendo',
+  'no se que hacer', 'dios mio', 'por el amor de dios', 'apurense', 'apurese', 'desesperad', 'ya no aguanto',
+  'no respira', 'esta muerto', 'esta muerta', 'mi hijo', 'mi hija', 'mi bebe', 'mis hijos', 'nos vamos a morir',
+  'gritando', 'llorando', 'grita', 'llora',
+];
+const DISTRESS_MILD = [
+  'ayuda', 'rapido', 'urgente', 'por favor', 'vengan', 'manden', 'pronto', 'miedo', 'asustad',
+  'nervios', 'preocupad', 'no puedo', 'que alguien', 'ay', 'ayudeme', 'ayudenme',
+];
+const CALM_WORDS = ['ya esta controlado', 'ya se apago', 'todo esta bien', 'no es grave', 'solo queria reportar', 'tranquilo'];
+
+const EMOTION_LEVELS = [
+  { min: 70, value: 'panic', label: 'Pánico', description: 'Llamante en pánico: hable despacio, dé instrucciones cortas y confirme la dirección.' },
+  { min: 45, value: 'agitated', label: 'Alterado', description: 'Llamante alterado: tranquilícelo y haga una pregunta a la vez.' },
+  { min: 20, value: 'nervous', label: 'Nervioso', description: 'Llamante nervioso, pero puede dar información.' },
+  { min: 0, value: 'calm', label: 'Calmado', description: 'Llamante tranquilo.' },
+];
+
+export const analyzeEmotion = (text, { volume = 0 } = {}) => {
+  const n = normalize(text);
+  if (!n?.trim()) return null;
+  const signals = [];
+  let score = 0;
+
+  const strong = DISTRESS_STRONG.filter((w) => new RegExp(`(^|[^a-z])${w}`).test(n));
+  if (strong.length) {
+    score += Math.min(50, strong.length * 25);
+    signals.push(`Palabras de angustia: "${strong.slice(0, 3).join('", "')}"`);
+  }
+  const mild = DISTRESS_MILD.filter((w) => new RegExp(`(^|[^a-z])${w}([^a-z]|$)`).test(n));
+  if (mild.length) {
+    score += Math.min(30, mild.length * 10);
+    signals.push(`Pide urgencia: "${mild.slice(0, 3).join('", "')}"`);
+  }
+
+  // Repeticiones: "ayuda ayuda", "rápido rápido"
+  const words = n.split(/[^a-z]+/).filter((w) => w.length > 2);
+  let repeats = 0;
+  for (let i = 1; i < words.length; i++) if (words[i] === words[i - 1]) repeats++;
+  if (repeats) {
+    score += Math.min(20, repeats * 10);
+    signals.push('Repite palabras');
+  }
+
+  // Frases muy cortas y entrecortadas
+  const phrases = String(text).split(/[.!?\n]+/).map((p) => p.trim()).filter(Boolean);
+  const shortPhrases = phrases.filter((p) => p.split(/\s+/).length <= 3).length;
+  if (phrases.length >= 3 && shortPhrases / phrases.length >= 0.5) {
+    score += 10;
+    signals.push('Frases cortas y entrecortadas');
+  }
+
+  if (/[!¡]/.test(text)) {
+    score += 5;
+  }
+
+  // Volumen de la voz (medido por el micrófono)
+  if (volume >= 60) {
+    score += 25;
+    signals.push('Voz muy alta (posibles gritos)');
+  } else if (volume >= 35) {
+    score += 10;
+    signals.push('Voz elevada');
+  }
+
+  if (CALM_WORDS.some((w) => n.includes(w))) {
+    score -= 25;
+    signals.push('Indica que la situación está controlada');
+  }
+
+  score = Math.max(0, Math.min(100, score));
+  const level = EMOTION_LEVELS.find((l) => score >= l.min);
+  return { ...level, score, signals };
+};

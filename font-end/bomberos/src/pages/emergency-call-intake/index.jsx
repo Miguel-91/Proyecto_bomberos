@@ -5,7 +5,7 @@ import Breadcrumb from '../../components/ui/Breadcrumb';
 import Button from '../../components/ui/Button';
 import Icon from '../../components/AppIcon';
 import { getEmergencyType, getPriority } from '../../utils/emergencyData';
-import { analyzeTranscript } from '../../utils/callAnalyzer';
+import { analyzeTranscript, analyzeEmotion } from '../../utils/callAnalyzer';
 import { getCurrentUser } from '../../utils/auth';
 import { useIncidents } from '../../utils/dataStore';
 
@@ -71,6 +71,10 @@ const EmergencyCallIntake = () => {
   const [location, setLocation] = useState(null);
   const [keyFacts, setKeyFacts] = useState([]);
   const [ticketId, setTicketId] = useState(null);
+  // Análisis en vivo para el panel de transcripción (tipo, prioridad y estado del llamante)
+  const [callAnalysis, setCallAnalysis] = useState(null);
+  const [liveText, setLiveText] = useState('');
+  const lastInterimRef = useRef(0);
 
   const transcriptRef = useRef([]);
   // Campos que llenó la voz automáticamente (se pueden seguir actualizando)
@@ -94,13 +98,14 @@ const EmergencyCallIntake = () => {
     return `${mins?.toString()?.padStart(2, '0')}:${secs?.toString()?.padStart(2, '0')}`;
   };
 
-  const addTranscriptEntry = (message, speaker, type) => {
+  const addTranscriptEntry = (message, speaker, type, volume = 0) => {
     const entry = {
       id: transcriptRef.current.length + 1,
       timestamp: new Date()?.toLocaleTimeString('es-GT'),
       speaker,
       message,
-      type
+      type,
+      volume
     };
     transcriptRef.current = [...transcriptRef.current, entry];
     setTranscript(transcriptRef.current);
@@ -159,13 +164,35 @@ const EmergencyCallIntake = () => {
     setKeyFacts(analysis?.keyFacts || []);
   };
 
-  const handleFinalTranscript = (text, speaker) => {
-    addTranscriptEntry(text, speaker, speaker === 'Operador' ? 'operator' : 'caller');
-    // Se analiza lo que dijo el llamante (si no hay, todo lo transcrito)
+  // Analiza todo lo dicho por el llamante (+ lo que está diciendo en este momento)
+  const analyzeCall = (extraText = '', extraVolume = 0) => {
     const callerLines = transcriptRef.current?.filter((t) => t?.type === 'caller');
     const source = callerLines?.length ? callerLines : transcriptRef.current;
-    const fullText = source?.map((t) => t?.message)?.join('. ');
-    applyAnalysis(analyzeTranscript(fullText));
+    const fullText = [...(source?.map((t) => t?.message) || []), extraText]?.filter(Boolean)?.join('. ');
+    if (!fullText?.trim()) return;
+    const analysis = analyzeTranscript(fullText);
+    // El estado emocional pesa más lo último que se dijo
+    const recent = source?.slice(-3);
+    const recentText = [...(recent?.map((t) => t?.message) || []), extraText]?.filter(Boolean)?.join('. ');
+    const volume = Math.max(extraVolume, ...(recent?.map((t) => t?.volume || 0) || [0]));
+    const emotion = analyzeEmotion(`${fullText}. ${recentText}`, { volume });
+    applyAnalysis(analysis);
+    setCallAnalysis({ ...analysis, emotion, onlyOperator: transcriptRef.current?.length > 0 && !callerLines?.length });
+  };
+
+  const handleFinalTranscript = (text, speaker, meta = {}) => {
+    addTranscriptEntry(text, speaker, speaker === 'Operador' ? 'operator' : 'caller', meta?.volume || 0);
+    setLiveText('');
+    analyzeCall();
+  };
+
+  // Llenado en vivo mientras la persona habla (máximo ~3 veces por segundo)
+  const handleInterimTranscript = (text, speaker, meta = {}) => {
+    setLiveText(text);
+    const now = Date.now();
+    if (now - lastInterimRef.current < 350) return;
+    lastInterimRef.current = now;
+    analyzeCall(text, meta?.volume || 0);
   };
 
   const handleListeningChange = useCallback((listening) => setIsListening(listening), []);
@@ -232,6 +259,8 @@ const EmergencyCallIntake = () => {
     setLocation(null);
     setKeyFacts([]);
     setTicketId(null);
+    setCallAnalysis(null);
+    setLiveText('');
     setCallDuration(0);
     setCallStatus('active');
   };
@@ -283,6 +312,7 @@ const EmergencyCallIntake = () => {
   const microphone = (
     <MicrophoneTranscriber
       onFinalTranscript={handleFinalTranscript}
+      onInterimTranscript={handleInterimTranscript}
       onListeningChange={handleListeningChange}
     />
   );
@@ -316,7 +346,7 @@ const EmergencyCallIntake = () => {
                 onStepComplete={() => {}}
               />
 
-              <CallTranscriptArea transcript={transcript} isRecording={isListening} />
+              <CallTranscriptArea transcript={transcript} isRecording={isListening} analysis={callAnalysis} liveText={liveText} />
             </div>
           </div>
         );
@@ -367,7 +397,7 @@ const EmergencyCallIntake = () => {
             <div className="space-y-6">
               {microphone}
 
-              <CallTranscriptArea transcript={transcript} isRecording={isListening} />
+              <CallTranscriptArea transcript={transcript} isRecording={isListening} analysis={callAnalysis} liveText={liveText} />
 
               {ticketPanel}
 

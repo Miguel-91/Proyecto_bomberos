@@ -25,7 +25,7 @@ const SPEECH_ERRORS = {
 const FATAL_ERRORS = ['not-allowed', 'service-not-allowed', 'audio-capture', 'network'];
 const LANGS = ['es-GT', 'es-MX', 'es-ES'];
 
-const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
+const MicrophoneTranscriber = ({ onFinalTranscript, onInterimTranscript, onListeningChange }) => {
   const [devices, setDevices] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [hasPermission, setHasPermission] = useState(false);
@@ -50,10 +50,14 @@ const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
   const audioRef = useRef({ stream: null, context: null, frame: null });
 
   const onFinalRef = useRef(onFinalTranscript);
+  const onInterimRef = useRef(onInterimTranscript);
+  // Volumen máximo de la frase actual (para saber si la persona grita)
+  const peakRef = useRef(0);
   const onListeningChangeRef = useRef(onListeningChange);
 
   speakerRef.current = speaker;
   onFinalRef.current = onFinalTranscript;
+  onInterimRef.current = onInterimTranscript;
   onListeningChangeRef.current = onListeningChange;
 
   const stopLevelMeter = () => {
@@ -79,7 +83,9 @@ const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
     const tick = () => {
       analyser.getByteTimeDomainData(data);
       const rms = Math.sqrt(data.reduce((acc, v) => acc + ((v - 128) / 128) ** 2, 0) / data.length);
-      setLevel(Math.min(100, Math.round(rms * 400)));
+      const value = Math.min(100, Math.round(rms * 400));
+      if (value > peakRef.current) peakRef.current = value;
+      setLevel(value);
       audioRef.current.frame = requestAnimationFrame(tick);
     };
     audioRef.current = { stream, context, frame: requestAnimationFrame(tick) };
@@ -120,12 +126,15 @@ const MicrophoneTranscriber = ({ onFinalTranscript, onListeningChange }) => {
           const result = event.results[i];
           if (result.isFinal) {
             const text = result[0].transcript.trim();
-            if (text) onFinalRef.current?.(text, speakerRef.current);
+            if (text) onFinalRef.current?.(text, speakerRef.current, { volume: peakRef.current });
+            peakRef.current = 0;
           } else {
             interim += result[0].transcript;
           }
         }
         setInterimText(interim);
+        // Analizar mientras la persona sigue hablando (llenado en vivo)
+        if (interim.trim()) onInterimRef.current?.(interim.trim(), speakerRef.current, { volume: peakRef.current });
       };
       recognition.onerror = (event) => {
         if (event.error === 'no-speech' || event.error === 'aborted') return; // silencio: se reinicia solo
