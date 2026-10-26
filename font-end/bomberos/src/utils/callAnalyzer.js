@@ -73,6 +73,96 @@ const extractPeople = (normalizedText) => {
   return Number(match?.[1]) || NUMBER_WORDS?.[match?.[1]] || null;
 };
 
+// ---------------------------------------------------------------------------
+// Teléfono (Guatemala: 8 dígitos, opcional +502). Acepta "5512 3456" o "cinco cinco uno dos..."
+// ---------------------------------------------------------------------------
+const DIGIT_WORDS = {
+  cero: '0', uno: '1', una: '1', dos: '2', tres: '3', cuatro: '4', cinco: '5', seis: '6', siete: '7',
+  ocho: '8', nueve: '9', diez: '10', once: '11', doce: '12', trece: '13', catorce: '14', quince: '15',
+  dieciseis: '16', diecisiete: '17', dieciocho: '18', diecinueve: '19', veinte: '20', treinta: '30',
+  cuarenta: '40', cincuenta: '50', sesenta: '60', setenta: '70', ochenta: '80', noventa: '90',
+};
+
+export const extractPhone = (text) => {
+  let t = normalize(text);
+  t = t.replace(/\b(veinte|treinta|cuarenta|cincuenta|sesenta|setenta|ochenta|noventa)\s+y\s+(uno|una|dos|tres|cuatro|cinco|seis|siete|ocho|nueve)\b/g,
+    (_, a, b) => String(Number(DIGIT_WORDS[a]) + Number(DIGIT_WORDS[b])));
+  t = t.replace(/\b[a-z]+\b/g, (w) => (DIGIT_WORDS[w] !== undefined ? DIGIT_WORDS[w] : w));
+  const runs = t.match(/\+?\d[\d\s.-]{6,}\d/g) || [];
+  for (const run of runs) {
+    let digits = run.replace(/\D/g, '');
+    if (digits.startsWith('502') && digits.length === 11) digits = digits.slice(3);
+    if (digits.length === 8) return `${digits.slice(0, 4)}-${digits.slice(4)}`;
+    if (digits.length > 8) {
+      const m = digits.match(/[2-7]\d{7}/);
+      if (m) return `${m[0].slice(0, 4)}-${m[0].slice(4)}`;
+    }
+  }
+  return null;
+};
+
+// ---------------------------------------------------------------------------
+// Nombre: "mi nombre es...", "me llamo...", "habla...", "soy..."
+// ---------------------------------------------------------------------------
+const NAME_TRIGGERS = ['mi nombre es', 'me llamo', 'le habla', 'les habla', 'habla', 'soy el senor', 'soy la senora', 'soy'];
+const NAME_STOP = new Set([
+  'y', 'e', 'estoy', 'vivo', 'mi', 'tengo', 'hay', 'necesito', 'necesitamos', 'por', 'en', 'desde', 'que',
+  'con', 'es', 'numero', 'telefono', 'celular', 'aqui', 'aca', 'llamo', 'llamando', 'le', 'les', 'para',
+  'porque', 'pues', 'este', 'esta', 'buenas', 'buenos', 'hola', 'senor', 'senora', 'vecino', 'vecina', 'un',
+  'una', 'el', 'la', 'los', 'las', 'se', 'no', 'si', 'muy', 'urgente', 'ayuda', 'auxilio', 'donde', 'cuando',
+  'como', 'al', 'a', 'hubo', 'paso', 'ocurrio', 'sucedio', 'tuvo', 'acaba', 'acabo', 'mire', 'oiga', 'fijese',
+  'quiero', 'queria', 'reportar', 'avisar', 'del', 'de',
+]);
+
+const capitalizeName = (s) => s.split(/\s+/).filter(Boolean).map((w) => (
+  ['de', 'del', 'la', 'los', 'las'].includes(w.toLowerCase()) ? w.toLowerCase() : w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()
+)).join(' ');
+
+export const extractName = (text) => {
+  const original = String(text || '');
+  const n = normalize(original);
+  // normalize() conserva la longitud (NFD + quitar tildes), pero por seguridad se reconstruye por palabras
+  for (const trigger of NAME_TRIGGERS) {
+    const re = new RegExp(`(?:^|[\\s,.;])${trigger}\\s+`, 'g');
+    let m;
+    while ((m = re.exec(n)) !== null) {
+      const restNorm = n.slice(m.index + m[0].length).split(/[,.;:!?\n]/)[0];
+      const wordsN = restNorm.split(/\s+/).filter(Boolean);
+      // Palabras originales (con tildes) en la misma posición
+      const origWords = original.split(/\s+/).filter(Boolean);
+      const normWords = origWords.map((w) => normalize(w).replace(/[,.;:!?]/g, ''));
+      const offset = n.slice(0, m.index + m[0].length).split(/\s+/).filter(Boolean).length;
+      const picked = [];
+      for (let i = 0; i < wordsN.length && picked.length < 6; i++) {
+        const w = wordsN[i];
+        if (/\d/.test(w)) break;
+        if ((w === 'de' || w === 'del') && picked.length > 0) {
+          const art = ['la', 'los', 'las'].includes(wordsN[i + 1]) ? 1 : 0;
+          const next = wordsN[i + 1 + art];
+          if (next && !NAME_STOP.has(next) && !/\d/.test(next)) {
+            for (let k = 0; k <= art; k++) picked.push(wordsN[i + k]);
+            i += art;
+            continue;
+          }
+          break;
+        }
+        if (NAME_STOP.has(w)) break;
+        // Recuperar la palabra con tildes si coincide
+        const orig = origWords[offset + i];
+        picked.push(orig && normWords[offset + i] === w ? orig.replace(/[,.;:!?]/g, '') : w);
+      }
+      if (!picked.length || picked.join(' ').length < 3) continue;
+      // Con "soy" a secas se exige que parezca un nombre (2+ palabras)
+      if (trigger === 'soy' && picked.length < 2) continue;
+      return capitalizeName(picked.join(' '));
+    }
+  }
+  return null;
+};
+
+// Resumen de lo que dijo el llamante para "Información adicional"
+const buildSummary = (text) => String(text || '').replace(/\s+/g, ' ').replace(/^\.\s*|\.\s*$/g, '').trim();
+
 export const analyzeTranscript = (text) => {
   const normalizedText = normalize(text);
   if (!normalizedText?.trim()) return null;
@@ -82,7 +172,8 @@ export const analyzeTranscript = (text) => {
     type,
     words?.filter((w) => normalizedText?.includes(w))?.length,
   ]);
-  scores?.sort((a, b) => b?.[1] - a?.[1]);
+  // Si hay empate, "heridos" no debe ganarle al tipo de incidente (choque, incendio...)
+  scores?.sort((a, b) => (b?.[1] - a?.[1]) || ((a?.[0] === 'medical') - (b?.[0] === 'medical')));
   const [bestType, bestScore] = scores?.[0];
   const totalHits = scores?.reduce((acc, [, n]) => acc + n, 0);
   const type = bestScore > 0 ? bestType : null;
@@ -108,6 +199,9 @@ export const analyzeTranscript = (text) => {
     confidence,
     priority,
     address: extractAddress(text),
+    name: extractName(text),
+    phone: extractPhone(text),
+    summary: buildSummary(text),
     trapped,
     injured,
     people,
