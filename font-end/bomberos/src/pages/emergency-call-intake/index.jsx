@@ -77,18 +77,53 @@ const EmergencyCallIntake = () => {
     }
 
     // Auto-fill caller info from voice recognition
-    if (data.name || data.phone || data.address) {
+    if (data.name || data.phone || data.address || data.fullText) {
       setCallerInfo(prev => ({
         ...prev,
         ...(data.name && { name: data.name }),
         ...(data.phone && { phone: data.phone }),
-        ...(data.address && { address: data.address })
+        ...(data.address && { address: data.address }),
+        // Descripción: lo que ha dicho el llamante (si el operador no escribió otra cosa)
+        ...(data.fullText && (!prev.additionalInfo || prev.additionalInfoFromVoice) && {
+          additionalInfo: data.fullText.replace(/^\.\s*|\.\s*$/g, ''),
+          additionalInfoFromVoice: true
+        })
       }));
+    }
+
+    // Auto-fill emergency classification (respeta el modo manual)
+    if (data.emergencyType || data.priority) {
+      setClassification(prev => {
+        if (prev.manualOverride) return prev;
+        const type = data.emergencyType || prev.type;
+        const priority = data.priority || prev.priority;
+        let units = 1;
+        if (type === 'incendio') units = 2;
+        if (type === 'materiales-peligrosos' || type === 'derrumbe') units = 3;
+        if (priority === 'critical') units += 2;
+        if (priority === 'high') units += 1;
+        const times = { critical: '3-5', high: '5-8', medium: '8-12', low: '12-15' };
+        return {
+          ...prev,
+          type,
+          priority,
+          ...(data.riskLevel && { riskLevel: data.riskLevel }),
+          ...(data.resourcesNeeded && { resourcesNeeded: data.resourcesNeeded }),
+          ...(data.emergencyLabel && { aiSuggestion: data.emergencyLabel }),
+          ...(data.confidence && { aiConfidence: data.confidence }),
+          estimatedUnits: Math.min(units, 5),
+          estimatedTime: times[priority] || '10-15'
+        };
+      });
     }
   };
 
   const handleCallerInfoChange = (newInfo) => {
-    setCallerInfo(newInfo);
+    setCallerInfo(prev => ({
+      ...newInfo,
+      // Si el operador escribe la descripción a mano, la voz ya no la reemplaza
+      additionalInfoFromVoice: newInfo.additionalInfo === prev.additionalInfo ? prev.additionalInfoFromVoice : false
+    }));
   };
 
   const handleClassificationChange = (newClassification) => {

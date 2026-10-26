@@ -45,8 +45,8 @@ const CallerInformationForm = ({ callerInfo, onCallerInfoChange, onLocationValid
       await new Promise(resolve => setTimeout(resolve, 1000));
 
       const mockLocation = {
-        lat: -34.6037 + (Math.random() - 0.5) * 0.1,
-        lng: -58.3816 + (Math.random() - 0.5) * 0.1,
+        lat: 14.5586 + (Math.random() - 0.5) * 0.02,
+        lng: -90.7295 + (Math.random() - 0.5) * 0.02,
         formatted_address: localInfo.address,
         verified: true
       };
@@ -122,7 +122,7 @@ const CallerInformationForm = ({ callerInfo, onCallerInfoChange, onLocationValid
             type="tel"
             value={localInfo.phone}
             onChange={(e) => handleChange('phone', e.target.value)}
-            placeholder="+54 9 11 1234-5678"
+            placeholder="Ej. 5512-3456"
             className={errors.phone ? 'border-destructive' : ''}
           />
           {errors.phone && (
@@ -140,7 +140,7 @@ const CallerInformationForm = ({ callerInfo, onCallerInfoChange, onLocationValid
               type="text"
               value={localInfo.address}
               onChange={(e) => handleChange('address', e.target.value)}
-              placeholder="Calle, número, ciudad"
+              placeholder="Calle, número, zona o aldea, municipio"
               className={`flex-1 ${errors.address ? 'border-destructive' : ''}`}
             />
             <Button
