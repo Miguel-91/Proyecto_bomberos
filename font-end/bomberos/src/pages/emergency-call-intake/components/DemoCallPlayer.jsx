@@ -2,6 +2,11 @@ import React, { useEffect, useRef, useState } from 'react';
 import Icon from '../../../components/AppIcon';
 import Button from '../../../components/ui/Button';
 import { DEMO_CALLS, getDemoCall } from '../../../utils/demoCalls';
+import { getEmergencyType, getPriority } from '../../../utils/emergencyData';
+
+// Muestra la etiqueta en español si el valor es un código conocido
+const typeLabel = (v) => getEmergencyType(v)?.label || v;
+const priorityLabel = (v) => (['critical', 'high', 'medium', 'low'].includes(v) ? getPriority(v)?.label : v);
 
 /**
  * Simulador de llamadas para demostraciones.
@@ -102,8 +107,8 @@ const DemoCallPlayer = ({ onInterimTranscript, onFinalTranscript, onStart, disab
         <div className="text-xs text-muted-foreground mb-2">
           <p>{selected?.description}</p>
           <p className="mt-1">
-            Se espera: <strong className="text-foreground">{selected?.expected?.type}</strong>,
-            prioridad <strong className="text-foreground">{selected?.expected?.priority}</strong>,
+            Se espera: <strong className="text-foreground">{typeLabel(selected?.expected?.type)}</strong>,
+            prioridad <strong className="text-foreground">{priorityLabel(selected?.expected?.priority)}</strong>,
             llamante <strong className="text-foreground">{selected?.expected?.emotion}</strong>.
           </p>
         </div>
