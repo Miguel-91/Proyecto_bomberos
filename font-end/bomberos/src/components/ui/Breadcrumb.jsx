@@ -11,6 +11,7 @@ const Breadcrumb = () => {
     '/resource-management': 'Recursos',
     '/incident-documentation': 'Tickets',
     '/system-settings': 'Configuración',
+    '/system-evaluation': 'Evaluación del sistema',
     '/personnel-scheduling': 'Personal',
     '/login': 'Iniciar Sesión'
   };

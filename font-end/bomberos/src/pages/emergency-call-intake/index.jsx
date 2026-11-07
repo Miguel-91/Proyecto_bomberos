@@ -22,6 +22,7 @@ import CallManagementPanel from './components/CallManagementPanel';
 import EmergencyProtocolGuide from './components/EmergencyProtocolGuide';
 import MicrophoneTranscriber from './components/MicrophoneTranscriber';
 import TicketPanel from './components/TicketPanel';
+import DemoCallPlayer from './components/DemoCallPlayer';
 
 const EMPTY_CALLER = { name: '', phone: '', address: '', additionalInfo: '', callStatus: 'En línea' };
 
@@ -31,6 +32,15 @@ const EMPTY_CLASSIFICATION = {
   aiConfidence: 0,
   aiSuggestion: 'Esperando transcripción',
   manualOverride: false,
+  // Salvaguardas: la IA solo sugiere; el operador debe confirmar el tipo antes de crear el ticket
+  confirmed: false,
+  needsConfirmation: false,
+  ambiguous: false,
+  priorityRaisedByDoubt: false,
+  evidence: [],
+  alternatives: [],
+  aiType: '',
+  aiPriority: '',
   estimatedUnits: '-',
   estimatedTime: '-',
   riskLevel: '-',
@@ -75,6 +85,8 @@ const EmergencyCallIntake = () => {
   const [callAnalysis, setCallAnalysis] = useState(null);
   const [liveText, setLiveText] = useState('');
   const lastInterimRef = useRef(0);
+  // Origen de la llamada para la auditoría: 'voz', 'simulacion' o 'texto'
+  const [callSource, setCallSource] = useState('voz');
 
   const transcriptRef = useRef([]);
   // Campos que llenó la voz automáticamente (se pueden seguir actualizando)
@@ -124,6 +136,14 @@ const EmergencyCallIntake = () => {
       estimatedUnits: analysis?.estimatedUnits,
       estimatedTime: analysis?.estimatedTime,
       riskLevel: analysis?.riskLevel,
+      needsConfirmation: analysis?.needsConfirmation,
+      ambiguous: analysis?.ambiguous,
+      priorityRaisedByDoubt: analysis?.priorityRaisedByDoubt,
+      evidence: analysis?.evidence,
+      alternatives: analysis?.alternatives,
+      aiType: analysis?.type,
+      aiPriority: analysis?.priority,
+      confirmed: false,
     }));
 
     // Nombre, teléfono, dirección e información adicional: se llenan si están vacíos
@@ -212,6 +232,17 @@ const EmergencyCallIntake = () => {
       ?.join('\n');
     const created = createIncident({
       type: classification?.type,
+      // Auditoría: qué sugirió la IA y qué decidió el operador
+      classificationAudit: {
+        aiType: classification?.aiType || null,
+        aiConfidence: classification?.aiConfidence || 0,
+        aiPriority: classification?.aiPriority || null,
+        finalType: classification?.type,
+        finalPriority: classification?.priority || 'medium',
+        changedByOperator: !!classification?.aiType && classification?.aiType !== classification?.type,
+        confirmedBy: user?.name,
+        source: callSource,
+      },
       priority: classification?.priority || 'medium',
       address: callerInfo?.address,
       caller: { name: callerInfo?.name, phone: callerInfo?.phone },
@@ -261,6 +292,7 @@ const EmergencyCallIntake = () => {
     setTicketId(null);
     setCallAnalysis(null);
     setLiveText('');
+    setCallSource('voz');
     setCallDuration(0);
     setCallStatus('active');
   };
@@ -277,6 +309,9 @@ const EmergencyCallIntake = () => {
         priority: call?.aiPrediction?.urgencyLevel,
         aiConfidence: call?.aiPrediction?.confidence,
         aiSuggestion: getEmergencyType(call?.aiPrediction?.type)?.label,
+        aiType: call?.aiPrediction?.type,
+        aiPriority: call?.aiPrediction?.urgencyLevel,
+        needsConfirmation: (call?.aiPrediction?.confidence || 0) < 75,
       });
     }
   };
@@ -294,6 +329,8 @@ const EmergencyCallIntake = () => {
 
   const missingFields = [
     !classification?.type && 'tipo de emergencia',
+    classification?.type && !classification?.confirmed && 'confirmar la clasificación',
+    !classification?.priority && 'prioridad',
     !callerInfo?.address?.trim() && 'dirección',
   ]?.filter(Boolean);
 
@@ -306,6 +343,24 @@ const EmergencyCallIntake = () => {
       user={user}
       onChangeStatus={(id, status, note) => changeStatus(id, status, user, note)}
       onFinalize={(id, result, notes) => finalizeIncident(id, result, notes, user)}
+    />
+  );
+
+  // Referencias a los manejadores más recientes (el simulador usa temporizadores)
+  const handlersRef = useRef({});
+  handlersRef.current = { final: handleFinalTranscript, interim: handleInterimTranscript };
+
+  const startDemoCall = () => {
+    resetCall();
+    setCallSource('simulacion');
+  };
+
+  const demoPlayer = (
+    <DemoCallPlayer
+      disabled={isListening}
+      onStart={startDemoCall}
+      onFinalTranscript={(...args) => handlersRef.current.final(...args)}
+      onInterimTranscript={(...args) => handlersRef.current.interim(...args)}
     />
   );
 
@@ -366,6 +421,7 @@ const EmergencyCallIntake = () => {
               <EmergencyClassification
                 classification={classification}
                 onClassificationChange={setClassification}
+                latestAnalysis={callAnalysis}
               />
 
               {keyFacts?.length > 0 && (
@@ -396,6 +452,8 @@ const EmergencyCallIntake = () => {
             {/* Right Column - Microphone, transcript, ticket and management */}
             <div className="space-y-6">
               {microphone}
+
+              {demoPlayer}
 
               <CallTranscriptArea transcript={transcript} isRecording={isListening} analysis={callAnalysis} liveText={liveText} />
 

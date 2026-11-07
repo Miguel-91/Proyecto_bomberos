@@ -30,6 +30,7 @@ const Header = () => {
 
   const moreItems = [
     { name: 'Recursos', href: '/resource-management', icon: 'Truck', permission: 'resources.view' },
+    { name: 'Evaluación IA', href: '/system-evaluation', icon: 'FlaskConical', permission: 'emergencies.manage' },
     { name: 'Configuración', href: '/system-settings', icon: 'Settings', permission: 'settings.manage' },
   ]?.filter(allowed);
 

@@ -5,12 +5,22 @@ const normalize = (text) =>
   text?.toLowerCase()?.normalize('NFD')?.replace(/[̀-ͯ]/g, '') || '';
 
 const TYPE_KEYWORDS = {
-  fire: ['incendio', 'fuego', 'humo', 'llamas', 'se quema', 'quemando', 'ardiendo', 'cortocircuito'],
-  medical: ['herido', 'herida', 'desmay', 'no respira', 'inconsciente', 'convulsion', 'infarto', 'dolor de pecho', 'sangra', 'embarazada', 'parto', 'ambulancia', 'fractura', 'diabetic', 'presion', 'enfermo'],
-  traffic: ['choque', 'accidente', 'atropell', 'colision', 'volco', 'moto', 'carro', 'vehiculo', 'bus', 'camion', 'trailer'],
-  rescue: ['atrapad', 'rescate', 'barranco', 'cayo', 'se cayo', 'pozo', 'rio', 'ahog', 'perdido', 'extraviado', 'derrumbe', 'escombros'],
-  hazmat: ['gas', 'quimico', 'fuga', 'derrame', 'toxico', 'cilindro', 'olor fuerte'],
-  natural: ['deslave', 'inundacion', 'sismo', 'terremoto', 'temblor', 'erupcion', 'volcan', 'tormenta', 'arbol caido', 'lahar'],
+  fire: ['incendio', 'incendi', 'fuego', 'humo', 'llamas', 'se quema', 'quemando', 'ardiendo', 'cortocircuito', 'corto circuito', 'chispas'],
+  medical: ['herido', 'herida', 'desmay', 'no respira', 'inconsciente', 'convulsi', 'infarto', 'dolor de pecho', 'sangra', 'embarazada', 'parto', 'se le rompio la fuente', 'ambulancia', 'fractura', 'quebr', 'diabetic', 'presion', 'enfermo', 'mareado', 'palid', 'le dio un ataque', 'alacran', 'picadura', 'le pico', 'mordi', 'traslado'],
+  traffic: ['choque', 'chocaron', 'accidente', 'atropell', 'colision', 'volco', 'moto', 'motorista', 'carro', 'vehiculo', 'bus', 'camion', 'trailer', 'pickup', 'tuc tuc', 'piloto', 'derrap', 'se fue contra'],
+  rescue: ['atrapad', 'rescate', 'barranco', 'se cayo a', 'pozo', 'ahog', 'perdid', 'se perdieron', 'extraviad', 'derrumb', 'escombros', 'encerrad', 'no puede subir', 'no puede salir'],
+  hazmat: ['gas', 'quimico', 'fuga', 'derram', 'toxico', 'cilindro', 'olor fuerte', 'huele', 'combustible', 'cisterna', 'gasolina', 'diesel', 'intoxic', 'fumig'],
+  natural: ['deslave', 'inund', 'sismo', 'terremoto', 'temblor', 'erupcion', 'volcan', 'tormenta', 'arbol', 'lahar', 'crecio', 'crecida', 'viento', 'agriet', 'rio'],
+};
+
+// Busca palabras clave al INICIO de una palabra (evita que "Mario" cuente como "río")
+const keywordRegexCache = {};
+const hasKeyword = (normalizedText, keyword) => {
+  if (!keywordRegexCache[keyword]) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    keywordRegexCache[keyword] = new RegExp(`(^|[^a-z0-9])${escaped}`);
+  }
+  return keywordRegexCache[keyword].test(normalizedText);
 };
 
 const TYPE_LABELS = {
@@ -22,8 +32,24 @@ const TYPE_LABELS = {
   natural: 'Desastre natural',
 };
 
-const CRITICAL_KEYWORDS = ['atrapad', 'no respira', 'inconsciente', 'explosion', 'colaps', 'ninos', 'muchas personas', 'varios heridos', 'mucha sangre', 'se esta quemando la casa', 'no reacciona', 'paro'];
-const HIGH_KEYWORDS = ['herido', 'sangra', 'fuego', 'incendio', 'humo', 'atropell', 'gas', 'quimico', 'fractura', 'convulsion', 'infarto'];
+// Criterios de prioridad basados en protocolos de triaje telefónico:
+// riesgo vital inmediato o personas expuestas al peligro = Crítica
+const CRITICAL_KEYWORDS = [
+  'atrapad', 'no respira', 'inconsciente', 'no reacciona', 'no responde', 'explosion', 'colaps', 'muchas personas',
+  'varios heridos', 'mucha sangre', 'se esta quemando la casa', 'paro', 'convulsi', 'dolor de pecho', 'infarto',
+  'ahog', 'barranco', 'atropell', 'intoxic', 'mareando', 'gente adentro', 'personas adentro', 'esta adentro',
+  'estan adentro', 'ninos adentro', 'nino adentro', 'escombros',
+];
+const HIGH_KEYWORDS = [
+  'herido', 'sangra', 'fuego', 'incendi', 'humo', 'llamas', 'ardiendo', 'gas', 'quimico', 'combustible', 'derram',
+  'fractura', 'quebr', 'golpead', 'embarazada', 'parto', 'diabetic', 'mareado', 'deslave', 'inund', 'crecio',
+  'arbol', 'perdid', 'se perdieron', 'derrumb', 'volco', 'derrap', 'accidente de moto',
+];
+// Personas en un lugar de peligro (casa en llamas, vehículo volcado...)
+const PEOPLE_INSIDE = /(gente|personas?|nin[oa]s?|abuel[oa]|alguien|senor[a]?|bebe|familia)\s+(?:\w+\s+){0,2}adentro|hay gente adentro/;
+
+// Por debajo de esta confianza el operador debe confirmar el tipo con el llamante
+export const CONFIRMATION_THRESHOLD = 75;
 
 const UNITS_BY_TYPE = { fire: 2, medical: 1, traffic: 2, rescue: 2, hazmat: 2, natural: 3 };
 const TIME_BY_PRIORITY = { critical: '5-8', high: '8-12', medium: '10-15', low: '15-20' };
@@ -170,19 +196,41 @@ export const analyzeTranscript = (text) => {
   // Tipo de emergencia por número de coincidencias
   const scores = Object.entries(TYPE_KEYWORDS)?.map(([type, words]) => [
     type,
-    words?.filter((w) => normalizedText?.includes(w))?.length,
+    words?.filter((w) => hasKeyword(normalizedText, w))?.length,
   ]);
   // Si hay empate, "heridos" no debe ganarle al tipo de incidente (choque, incendio...)
   scores?.sort((a, b) => (b?.[1] - a?.[1]) || ((a?.[0] === 'medical') - (b?.[0] === 'medical')));
   const [bestType, bestScore] = scores?.[0];
   const totalHits = scores?.reduce((acc, [, n]) => acc + n, 0);
   const type = bestScore > 0 ? bestType : null;
-  const confidence = type ? Math.min(95, Math.round(55 + (bestScore / Math.max(totalHits, 1)) * 25 + bestScore * 5)) : 0;
+  // Certeza estimada (heurística, no es una probabilidad calibrada):
+  // crece con el número de palabras clave del tipo ganador y baja si otros tipos compiten.
+  // 1 palabra ≈ 45 %, 2 ≈ 60 %, 3 ≈ 75 %, 4 o más ≈ 90 % (si no hay competencia).
+  const share = bestScore / Math.max(totalHits, 1);
+  const confidence = type ? Math.min(95, Math.round(30 + 15 * Math.min(bestScore, 4) * share)) : 0;
 
   let priority = 'medium';
-  if (CRITICAL_KEYWORDS?.some((w) => normalizedText?.includes(w))) priority = 'critical';
-  else if (HIGH_KEYWORDS?.some((w) => normalizedText?.includes(w))) priority = 'high';
-  else if (!type) priority = 'low';
+  if (CRITICAL_KEYWORDS?.some((w) => hasKeyword(normalizedText, w)) || PEOPLE_INSIDE.test(normalizedText)) priority = 'critical';
+  else if (HIGH_KEYWORDS?.some((w) => hasKeyword(normalizedText, w))) priority = 'high';
+  // Si no se reconoce el tipo, la IA NO asigna prioridad (antes asignaba "baja": era el error más peligroso).
+  // Queda pendiente para que el operador la defina.
+  else if (!type) priority = null;
+
+  // ---- Salvaguardas: explicación, alternativas y ambigüedad -------------------
+  // Palabras que llevaron a la clasificación (para que el operador vea el "por qué")
+  const evidence = type ? TYPE_KEYWORDS?.[type]?.filter((w) => hasKeyword(normalizedText, w)) : [];
+  // Otros tipos posibles (segunda opción)
+  const alternatives = scores
+    ?.filter(([t, n]) => n > 0 && t !== type)
+    ?.slice(0, 2)
+    ?.map(([t, n]) => ({ type: t, label: TYPE_LABELS?.[t], hits: n }));
+  const secondScore = alternatives?.[0]?.hits || 0;
+  // Ambigua: la segunda opción está cerca de la primera, o hay muy poca evidencia
+  const ambiguous = !!type && (secondScore >= bestScore * 0.75 || bestScore < 2);
+  const lowConfidence = !!type && confidence < CONFIRMATION_THRESHOLD;
+  // Regla conservadora: ante la duda, la prioridad nunca queda en "media" o "baja"
+  const priorityRaisedByDoubt = ambiguous && (priority === 'medium' || priority === 'low');
+  if (priorityRaisedByDoubt) priority = 'high';
 
   const trapped = normalizedText?.includes('atrapad');
   const injured = /herid|lesionad|sangra|inconsciente|no respira/.test(normalizedText);
@@ -202,13 +250,19 @@ export const analyzeTranscript = (text) => {
     name: extractName(text),
     phone: extractPhone(text),
     summary: buildSummary(text),
+    evidence,
+    alternatives,
+    ambiguous,
+    lowConfidence,
+    needsConfirmation: ambiguous || lowConfidence,
+    priorityRaisedByDoubt,
     trapped,
     injured,
     people,
     keyFacts,
     estimatedUnits: (UNITS_BY_TYPE?.[type] || 1) + (priority === 'critical' ? 1 : 0),
-    estimatedTime: TIME_BY_PRIORITY?.[priority],
-    riskLevel: priority === 'critical' ? 'Muy alto' : priority === 'high' ? 'Alto' : priority === 'medium' ? 'Moderado' : 'Bajo',
+    estimatedTime: TIME_BY_PRIORITY?.[priority] || '-',
+    riskLevel: priority === 'critical' ? 'Muy alto' : priority === 'high' ? 'Alto' : priority === 'medium' ? 'Moderado' : priority === 'low' ? 'Bajo' : 'Por definir',
   };
 };
 

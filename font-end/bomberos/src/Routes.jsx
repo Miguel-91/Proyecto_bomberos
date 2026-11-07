@@ -10,6 +10,7 @@ import ResourceManagement from './pages/resource-management';
 import IncidentDocumentation from './pages/incident-documentation';
 import EmergencyDashboard from './pages/emergency-dashboard';
 import SystemSettings from './pages/system-settings';
+import SystemEvaluation from './pages/system-evaluation';
 import { getCurrentUser, hasPermission } from './utils/auth';
 
 // Redirige al login si no hay sesión, y al dashboard si el rol no tiene permiso
@@ -33,6 +34,7 @@ const Routes = () => {
         <Route path="/personnel-scheduling" element={<ProtectedRoute permission="personnel.view"><PersonnelScheduling /></ProtectedRoute>} />
         <Route path="/resource-management" element={<ProtectedRoute permission="resources.view"><ResourceManagement /></ProtectedRoute>} />
         <Route path="/incident-documentation" element={<ProtectedRoute permission="incidents.view"><IncidentDocumentation /></ProtectedRoute>} />
+        <Route path="/system-evaluation" element={<ProtectedRoute permission="emergencies.manage"><SystemEvaluation /></ProtectedRoute>} />
         <Route path="/system-settings" element={<ProtectedRoute permission="settings.manage"><SystemSettings /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </RouterRoutes>
